@@ -135,7 +135,9 @@ export default function Monitor() {
   const serving = state?.serving || [];
   const waiting = state?.waiting || [];
   const current = lastCall || serving[0] || null;
-  const otherServing = serving.filter((t) => !current || t.id !== current.id);
+  const counters = state?.counters || [];
+  const servingByCounter = {};
+  serving.forEach((t) => { servingByCounter[t.counter_id] = t; });
   const promos = settings.promo_media || [];
 
   const [promoIdx, setPromoIdx] = useState(0);
@@ -184,8 +186,9 @@ export default function Monitor() {
         </div>
       </header>
 
-      <main className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-6 p-6 min-h-0">
-        <div className="md:col-span-7 relative rounded-3xl overflow-hidden bg-white border border-slate-200 shadow-sm min-h-[280px]" data-testid="monitor-promo-panel">
+      <main className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-6 p-6 min-h-0 overflow-y-auto md:overflow-hidden">
+        <div className="md:col-span-7 flex flex-col gap-6 min-h-0">
+          <div className="relative w-full aspect-video rounded-3xl overflow-hidden bg-white border border-slate-200 shadow-sm shrink-0" data-testid="monitor-promo-panel">
           {promos.length === 0 ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-600 to-indigo-800 text-white">
               <Megaphone className="w-14 h-14 text-indigo-300 mb-4" />
@@ -218,6 +221,45 @@ export default function Monitor() {
               )}
             </>
           )}
+          </div>
+
+          <div className="flex-1 min-h-0 shrink-0" data-testid="monitor-counters-panel">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <h2 className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">Status Loket</h2>
+              <span className="text-xs font-semibold text-slate-400">{serving.length} dari {counters.length} loket melayani</span>
+            </div>
+            <div className={`grid gap-4 ${counters.length <= 3 ? "grid-cols-3" : counters.length === 4 ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-3 lg:grid-cols-4"}`}>
+              {counters.map((c) => {
+                const t = servingByCounter[c.id];
+                const isActive = current && current.counter_id === c.id;
+                return (
+                  <motion.div
+                    key={c.id}
+                    animate={isActive ? { scale: [1, 1.04, 1] } : { scale: 1 }}
+                    transition={isActive ? { duration: 1.2, repeat: Infinity } : { duration: 0.2 }}
+                    className={`rounded-2xl px-4 py-4 text-center border shadow-sm ${
+                      isActive
+                        ? "bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-600/25"
+                        : t
+                        ? "bg-white border-slate-200"
+                        : "bg-slate-50 border-slate-200 border-dashed"
+                    }`}
+                    data-testid={`monitor-counter-card-${c.name.replace(/\s/g, "-")}`}
+                  >
+                    <p className={`text-[11px] font-bold uppercase tracking-[0.2em] ${isActive ? "text-indigo-200" : "text-slate-400"}`}>{c.name}</p>
+                    <p className={`mt-1.5 text-3xl lg:text-4xl font-black tabular-nums tracking-tight ${
+                      isActive ? "text-amber-300" : t ? "text-slate-900" : "text-slate-300"
+                    }`}>
+                      {t ? t.code : "—"}
+                    </p>
+                    <p className={`mt-1 text-[11px] font-semibold truncate ${isActive ? "text-white" : t ? "text-indigo-600" : "text-slate-400"}`}>
+                      {t ? t.service_name : "Tersedia"}
+                    </p>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <div className="md:col-span-5 flex flex-col gap-6 min-h-0">
@@ -243,17 +285,6 @@ export default function Monitor() {
               {current ? current.counter_name : ""}
             </p>
           </div>
-
-          {otherServing.length > 0 && (
-            <div className="grid grid-cols-2 gap-3 shrink-0">
-              {otherServing.slice(0, 2).map((t) => (
-                <div key={t.id} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 text-center shadow-sm">
-                  <p className="text-2xl font-black tabular-nums text-slate-900">{t.code}</p>
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-indigo-600">{t.counter_name}</p>
-                </div>
-              ))}
-            </div>
-          )}
 
           <div className="flex-1 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col min-h-0" data-testid="monitor-waiting-list">
             <div className="flex items-center justify-between mb-4">

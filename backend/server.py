@@ -184,6 +184,9 @@ class BranchInput(BaseModel):
     active: bool = True
     ticker_text: str = ""
     promo_media: List[PromoItem] = []
+    printer_name: str = ""
+    print_header: str = ""
+    print_footer: str = ""
 
 
 class SettingsInput(BaseModel):
@@ -193,6 +196,18 @@ class SettingsInput(BaseModel):
     promo_media: List[PromoItem] = []
     primary_color: str = "#4f46e5"
     logo_url: str = ""
+    footer_text: str = ""
+
+
+class SurveyInput(BaseModel):
+    ticket_id: str
+    rating: int = 0
+    feedback: str = ""
+    photo: str = ""
+
+
+class RestoreInput(BaseModel):
+    data: dict
 
 
 class UserInput(BaseModel):
@@ -429,9 +444,12 @@ async def delete_counter(counter_id: str, request: Request):
 @api_router.get("/settings")
 async def get_settings():
     s = await db.settings.find_one({"id": "main"}, {"_id": 0})
-    if s and "promo_media" not in s:
-        s["promo_media"] = []
-    return s or {"id": "main", "org_name": "Antrian Digital", "tagline": "", "ticker_text": "", "promo_media": []}
+    if s:
+        s.setdefault("promo_media", [])
+        s.setdefault("primary_color", "#4f46e5")
+        s.setdefault("logo_url", "")
+        s.setdefault("footer_text", "")
+    return s or {"id": "main", "org_name": "Antrian Digital", "tagline": "", "ticker_text": "", "promo_media": [], "primary_color": "#4f46e5", "logo_url": "", "footer_text": ""}
 
 
 @api_router.put("/settings")
@@ -540,6 +558,9 @@ async def queue_state(branch_id: Optional[str] = None):
         "branch_name": (branch or {}).get("name", ""),
         "primary_color": g.get("primary_color", "#4f46e5"),
         "logo_url": g.get("logo_url", ""),
+        "footer_text": g.get("footer_text", ""),
+        "print_header": (branch or {}).get("print_header", ""),
+        "print_footer": (branch or {}).get("print_footer", ""),
     }
     return {"services": services, "counters": counters, "serving": serving, "waiting": waiting, "skipped": skipped, "settings": settings}
 
@@ -707,7 +728,96 @@ async def recap(request: Request, branch_id: Optional[str] = None, date: Optiona
     if branch_id:
         q["branch_id"] = branch_id
     logs = await db.call_logs.find(q, {"_id": 0}).sort("at", -1).to_list(1000)
+    ticket_ids = list({l["ticket_id"] for l in logs})
+    tickets = await db.tickets.find({"id": {"$in": ticket_ids}}, {"_id": 0, "id": 1, "survey": 1}).to_list(2000)
+    surveys = {t["id"]: t.get("survey") for t in tickets}
+    for l in logs:
+        l["survey"] = surveys.get(l["ticket_id"])
     return {"logs": logs}
+
+
+@api_router.get("/recap/export")
+async def recap_export(request: Request, branch_id: Optional[str] = None, date: Optional[str] = None):
+    user = await get_current_user(request)
+    if user.get("role") == "operator" and user.get("branch_id"):
+        branch_id = user["branch_id"]
+    d = date or today_str()
+    q = {"date": d}
+    if branch_id:
+        q["branch_id"] = branch_id
+    logs = await db.call_logs.find(q, {"_id": 0}).sort("at", 1).to_list(5000)
+    ticket_ids = list({l["ticket_id"] for l in logs})
+    tickets = await db.tickets.find({"id": {"$in": ticket_ids}}, {"_id": 0, "id": 1, "survey": 1}).to_list(5000)
+    surveys = {t["id"]: t.get("survey") or {} for t in tickets}
+    action_labels = {"call": "Panggil", "recall": "Panggil Ulang", "skip": "Lewati", "complete": "Selesai", "restore": "Prioritaskan"}
+
+    import io
+    from openpyxl import Workbook
+    from fastapi.responses import StreamingResponse
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Rekap"
+    ws.append(["Waktu", "Tiket", "Layanan", "Loket", "Petugas", "Aksi", "Cabang", "Rating", "Saran"])
+    for l in logs:
+        sv = surveys.get(l["ticket_id"], {})
+        ws.append([
+            l["at"][11:19], l["ticket_code"], l.get("service_name", ""), l.get("counter_name", "") or "-",
+            l.get("operator_name", ""), action_labels.get(l["action"], l["action"]), l.get("branch_name", ""),
+            sv.get("rating", "") or "", sv.get("feedback", "") or "",
+        ])
+    for col, w in zip("ABCDEFGHI", [10, 10, 22, 14, 20, 14, 20, 8, 40]):
+        ws.column_dimensions[col].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="rekap_{d}.xlsx"'},
+    )
+
+
+# ---------- Survey kepuasan ----------
+@api_router.post("/surveys")
+async def submit_survey(body: SurveyInput, request: Request):
+    user = await get_current_user(request)
+    ticket = await db.tickets.find_one({"id": body.ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
+    ensure_branch_access(user, ticket.get("branch_id"))
+    rating = max(0, min(5, body.rating))
+    survey = {"rating": rating, "feedback": body.feedback, "photo": body.photo, "at": now_iso(), "by": user.get("name", user.get("email", ""))}
+    await db.tickets.update_one({"id": body.ticket_id}, {"$set": {"survey": survey}})
+    return {"ok": True, "survey": survey}
+
+
+# ---------- Database backup & restore ----------
+BACKUP_COLLECTIONS = ["branches", "services", "counters", "tickets", "users", "settings", "call_logs", "sequences", "meta"]
+
+
+@api_router.get("/db/backup")
+async def db_backup(request: Request):
+    await require_admin(request)
+    from fastapi.responses import JSONResponse
+    dump = {"exported_at": now_iso(), "data": {}}
+    for c in BACKUP_COLLECTIONS:
+        dump["data"][c] = await db[c].find({}, {"_id": 0}).to_list(100000)
+    return JSONResponse(dump, headers={"Content-Disposition": f'attachment; filename="backup_{today_str()}.json"'})
+
+
+@api_router.post("/db/restore")
+async def db_restore(body: RestoreInput, request: Request):
+    await require_admin(request)
+    restored = {}
+    for c, docs in body.data.items():
+        if c not in BACKUP_COLLECTIONS or not isinstance(docs, list):
+            continue
+        await db[c].delete_many({})
+        if docs:
+            await db[c].insert_many([{**d} for d in docs])
+        restored[c] = len(docs)
+    await manager.broadcast({"type": "update"})
+    return {"ok": True, "restored": restored}
 
 
 # ---------- Seeding ----------

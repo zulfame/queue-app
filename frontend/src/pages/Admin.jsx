@@ -4,29 +4,43 @@ import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, LayoutDashboard, ListTree, DoorOpen, Settings2,
   Users, Clock, CheckCircle2, SkipForward, Trash2, Pencil, Plus, RefreshCw,
-  Building2, MapPin, UserCog, History,
+  Building2, MapPin, UserCog, History, Database, Printer, Download, Upload,
+  FileSpreadsheet, Star, Camera, X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { api, formatApiErrorDetail } from "../lib/api";
 import { applyBranding } from "../lib/branding";
+import { fileToDataUrl } from "../lib/image";
+import { usePagedSearch, SearchBox, Pager } from "../components/paged";
 import { useAuth } from "../context/AuthContext";
 import { useQueueSocket } from "../hooks/useQueueSocket";
 
 const ICON_OPTIONS = ["users", "banknote", "star", "pill", "heart-pulse", "file-text", "stethoscope", "credit-card", "clipboard-list", "building"];
 
-const TABS = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "branches", label: "Cabang", icon: Building2 },
-  { id: "services", label: "Layanan", icon: ListTree },
-  { id: "counters", label: "Loket", icon: DoorOpen },
-  { id: "users", label: "Pengguna", icon: UserCog },
-  { id: "recap", label: "Rekap", icon: History },
-  { id: "settings", label: "Pengaturan", icon: Settings2 },
+const MENU = [
+  { type: "item", id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  {
+    type: "group", label: "Antrian", items: [
+      { id: "branches", label: "Kantor", icon: Building2 },
+      { id: "services", label: "Layanan", icon: ListTree },
+      { id: "counters", label: "Loket", icon: DoorOpen },
+    ],
+  },
+  { type: "item", id: "recap", label: "Laporan", icon: History },
+  {
+    type: "group", label: "Pengaturan", items: [
+      { id: "settings", label: "Aplikasi", icon: Settings2 },
+      { id: "users", label: "Pengguna", icon: UserCog },
+      { id: "database", label: "Database", icon: Database },
+      { id: "printers", label: "Printers", icon: Printer },
+    ],
+  },
 ];
 
 const emptyService = { name: "", prefix: "", description: "", icon: "users", active: true };
@@ -43,6 +57,18 @@ const ACTION_LABELS = {
 };
 
 const todayInput = () => new Date().toISOString().slice(0, 10);
+
+const TabButton = ({ t, tab, setTab }) => (
+  <button
+    onClick={() => setTab(t.id)}
+    data-testid={`admin-tab-${t.id}`}
+    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${
+      tab === t.id ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100"
+    }`}
+  >
+    <t.icon className="w-4 h-4" /> {t.label}
+  </button>
+);
 
 export default function Admin() {
   const { logout } = useAuth();
@@ -62,6 +88,8 @@ export default function Admin() {
   const [users, setUsers] = useState([]);
   const [recapLogs, setRecapLogs] = useState([]);
   const [recapDate, setRecapDate] = useState(todayInput());
+  const [printerCfg, setPrinterCfg] = useState({ printer_name: "", print_header: "", print_footer: "" });
+  const [surveyForm, setSurveyForm] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -94,7 +122,10 @@ export default function Admin() {
   useEffect(() => { if (branchId) localStorage.setItem("admin_branch", branchId); }, [branchId]);
   useEffect(() => {
     const b = branches.find((x) => x.id === branchId);
-    if (b) setBranchCfg({ ticker_text: b.ticker_text || "", promo_media: b.promo_media || [] });
+    if (b) {
+      setBranchCfg({ ticker_text: b.ticker_text || "", promo_media: b.promo_media || [] });
+      setPrinterCfg({ printer_name: b.printer_name || "", print_header: b.print_header || "", print_footer: b.print_footer || "" });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId, branches.length]);
   useQueueSocket(useCallback(() => load(), [load]));
@@ -128,7 +159,7 @@ export default function Admin() {
     try {
       if (brForm.id) {
         const orig = branches.find((x) => x.id === brForm.id) || {};
-        await api.put(`/branches/${brForm.id}`, { ticker_text: orig.ticker_text || "", promo_media: orig.promo_media || [], ...brForm });
+        await api.put(`/branches/${brForm.id}`, { ...branchPayload(orig), name: brForm.name, address: brForm.address, active: brForm.active });
       } else {
         await api.post("/branches", brForm);
       }
@@ -157,19 +188,87 @@ export default function Admin() {
     } catch (err) { handleErr(err); }
   };
 
-  const saveBranchCfg = async () => {
+  const branchPayload = (orig) => ({
+    name: orig.name,
+    address: orig.address || "",
+    active: orig.active,
+    ticker_text: orig.ticker_text || "",
+    promo_media: orig.promo_media || [],
+    printer_name: orig.printer_name || "",
+    print_header: orig.print_header || "",
+    print_footer: orig.print_footer || "",
+  });
+
+  const patchBranch = async (patch, msg) => {
     if (!currentBranch) return;
     try {
-      await api.put(`/branches/${branchId}`, {
-        name: currentBranch.name,
-        address: currentBranch.address || "",
-        active: currentBranch.active,
-        ticker_text: branchCfg.ticker_text,
-        promo_media: (branchCfg.promo_media || []).filter((m) => m.url.trim()),
-      });
-      toast.success("Pengaturan cabang disimpan");
+      await api.put(`/branches/${branchId}`, { ...branchPayload(currentBranch), ...patch });
+      toast.success(msg);
       load();
     } catch (err) { handleErr(err); }
+  };
+
+  const saveBranchCfg = () => patchBranch({
+    ticker_text: branchCfg.ticker_text,
+    promo_media: (branchCfg.promo_media || []).filter((m) => m.url.trim()),
+  }, "Pengaturan cabang disimpan");
+
+  const savePrinterCfg = () => patchBranch({ ...printerCfg }, "Pengaturan printer disimpan");
+
+  const exportRecap = async () => {
+    try {
+      const res = await api.get(`/recap/export?branch_id=${branchId}&date=${recapDate}`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `rekap_${recapDate}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { handleErr(err); }
+  };
+
+  const downloadBackup = async () => {
+    try {
+      const res = await api.get("/db/backup", { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `backup_${todayInput()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Backup diunduh");
+    } catch (err) { handleErr(err); }
+  };
+
+  const restoreDb = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!window.confirm("Restore akan MENGGANTI seluruh data saat ini dengan isi file backup. Lanjutkan?")) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      const { data } = await api.post("/db/restore", { data: parsed.data || parsed });
+      toast.success(`Restore berhasil: ${Object.values(data.restored).reduce((a, b) => a + b, 0)} dokumen`);
+      load();
+    } catch (err) { handleErr(err); }
+  };
+
+  const saveSurveyEdit = async () => {
+    try {
+      await api.post("/surveys", { ticket_id: surveyForm.ticket_id, rating: surveyForm.rating, feedback: surveyForm.feedback, photo: surveyForm.photo });
+      toast.success("Survey diperbarui");
+      setSurveyForm(null);
+      load();
+    } catch (err) { handleErr(err); }
+  };
+
+  const onSurveyEditPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setSurveyForm((s) => ({ ...s, photo: dataUrl }));
+    } catch { toast.error("Gagal memproses foto"); }
   };
 
   const resetQueue = async () => {
@@ -207,18 +306,18 @@ export default function Admin() {
         <Link to="/" className="hidden lg:inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-700 mb-6 transition-colors" data-testid="admin-back-link">
           <ArrowLeft className="w-4 h-4" /> Beranda
         </Link>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            data-testid={`admin-tab-${t.id}`}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${
-              tab === t.id ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <t.icon className="w-4 h-4" /> {t.label}
-          </button>
-        ))}
+        {MENU.map((entry, gi) =>
+          entry.type === "item" ? (
+            <TabButton key={entry.id} t={entry} tab={tab} setTab={setTab} />
+          ) : (
+            <div key={gi} className="flex lg:flex-col gap-2 lg:gap-1 lg:mt-4">
+              <span className="hidden lg:block px-4 pb-1 text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">{entry.label}</span>
+              {entry.items.map((t) => (
+                <TabButton key={t.id} t={t} tab={tab} setTab={setTab} />
+              ))}
+            </div>
+          )
+        )}
         <button onClick={logout} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-500 hover:bg-rose-50 hover:text-rose-600 lg:mt-auto whitespace-nowrap transition-colors duration-200" data-testid="admin-logout-button">
           <LogOut className="w-4 h-4" /> Keluar
         </button>
@@ -287,14 +386,17 @@ export default function Admin() {
 
         {tab === "branches" && (
           <div data-testid="admin-branches">
-            <div className="flex items-center justify-between mb-8">
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Kantor Cabang</h1>
-              <Button onClick={() => setBrForm({ ...emptyBranch })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-branch-button">
-                <Plus className="w-4 h-4 mr-2" /> Tambah Cabang
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Kantor</h1>
+              <div className="flex items-center gap-3">
+                <SearchBox value={brPaged.query} onChange={brPaged.setQuery} placeholder="Cari kantor..." testId="admin-branches-search" />
+                <Button onClick={() => setBrForm({ ...emptyBranch })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-branch-button">
+                  <Plus className="w-4 h-4 mr-2" /> Tambah Kantor
+                </Button>
+              </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
-              {branches.map((b) => (
+              {brPaged.pageItems.map((b) => (
                 <div key={b.id} className="flex items-center gap-4 px-6 py-4">
                   <span className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center"><Building2 className="w-5 h-5" /></span>
                   <div className="flex-1 min-w-0">
@@ -322,6 +424,7 @@ export default function Admin() {
                   </button>
                 </div>
               ))}
+              <Pager {...brPaged} testId="admin-branches-pager" />
             </div>
           </div>
         )}
@@ -331,6 +434,7 @@ export default function Admin() {
             <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Layanan</h1>
               <div className="flex items-center gap-3">
+                <SearchBox value={svPaged.query} onChange={svPaged.setQuery} placeholder="Cari layanan..." testId="admin-services-search" />
                 {branchSelect}
                 <Button onClick={() => setSvcForm({ ...emptyService })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-service-button">
                   <Plus className="w-4 h-4 mr-2" /> Tambah Layanan
@@ -338,7 +442,7 @@ export default function Admin() {
               </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
-              {services.map((s) => (
+              {svPaged.pageItems.map((s) => (
                 <div key={s.id} className="flex items-center gap-4 px-6 py-4">
                   <span className="w-10 h-10 rounded-xl bg-primary text-white font-black flex items-center justify-center">{s.prefix}</span>
                   <div className="flex-1 min-w-0">
@@ -360,6 +464,7 @@ export default function Admin() {
                   </button>
                 </div>
               ))}
+              <Pager {...svPaged} testId="admin-services-pager" />
             </div>
           </div>
         )}
@@ -369,6 +474,7 @@ export default function Admin() {
             <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Loket</h1>
               <div className="flex items-center gap-3">
+                <SearchBox value={ctPaged.query} onChange={ctPaged.setQuery} placeholder="Cari loket..." testId="admin-counters-search" />
                 {branchSelect}
                 <Button onClick={() => setCtrForm({ ...emptyCounter })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-counter-button">
                   <Plus className="w-4 h-4 mr-2" /> Tambah Loket
@@ -376,7 +482,7 @@ export default function Admin() {
               </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
-              {counters.map((c) => (
+              {ctPaged.pageItems.map((c) => (
                 <div key={c.id} className="flex items-center gap-4 px-6 py-4">
                   <span className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center"><DoorOpen className="w-5 h-5" /></span>
                   <div className="flex-1">
@@ -400,20 +506,24 @@ export default function Admin() {
                   </button>
                 </div>
               ))}
+              <Pager {...ctPaged} testId="admin-counters-pager" />
             </div>
           </div>
         )}
 
         {tab === "users" && (
           <div data-testid="admin-users">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Kelola Pengguna</h1>
-              <Button onClick={() => setUsrForm({ ...emptyUser })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-user-button">
-                <Plus className="w-4 h-4 mr-2" /> Tambah Pengguna
-              </Button>
+              <div className="flex items-center gap-3">
+                <SearchBox value={usPaged.query} onChange={usPaged.setQuery} placeholder="Cari pengguna..." testId="admin-users-search" />
+                <Button onClick={() => setUsrForm({ ...emptyUser })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-user-button">
+                  <Plus className="w-4 h-4 mr-2" /> Tambah Pengguna
+                </Button>
+              </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
-              {users.map((u) => (
+              {usPaged.pageItems.map((u) => (
                 <div key={u.id} className="flex items-center gap-4 px-6 py-4">
                   <span className={`w-10 h-10 rounded-xl text-white flex items-center justify-center ${u.role === "admin" ? "bg-slate-900" : "bg-primary"}`}>
                     <UserCog className="w-5 h-5" />
@@ -447,6 +557,7 @@ export default function Admin() {
                   </button>
                 </div>
               ))}
+              <Pager {...usPaged} testId="admin-users-pager" />
             </div>
           </div>
         )}
@@ -454,7 +565,7 @@ export default function Admin() {
         {tab === "recap" && (
           <div data-testid="admin-recap">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Rekap Pemanggilan</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Laporan Pemanggilan</h1>
               <div className="flex items-center gap-3">
                 {branchSelect}
                 <Input
@@ -464,11 +575,14 @@ export default function Admin() {
                   className="w-44 h-10 rounded-xl bg-white"
                   data-testid="admin-recap-date"
                 />
+                <Button onClick={exportRecap} variant="outline" className="rounded-xl font-semibold border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" data-testid="admin-recap-export-button">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" /> Export XLSX
+                </Button>
               </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-              <div className="grid grid-cols-[80px_90px_1fr_1fr_1fr_110px] gap-3 px-6 py-3 bg-slate-50 text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                <span>Waktu</span><span>Tiket</span><span>Layanan</span><span>Loket</span><span>Petugas</span><span>Aksi</span>
+              <div className="grid grid-cols-[70px_85px_1fr_1fr_1fr_110px_120px] gap-3 px-6 py-3 bg-slate-50 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                <span>Waktu</span><span>Tiket</span><span>Layanan</span><span>Loket</span><span>Petugas</span><span>Aksi</span><span>Survey</span>
               </div>
               <div className="divide-y divide-slate-100" data-testid="admin-recap-list">
                 {recapLogs.length === 0 && (
@@ -476,8 +590,9 @@ export default function Admin() {
                 )}
                 {recapLogs.map((l) => {
                   const a = ACTION_LABELS[l.action] || { label: l.action, cls: "bg-slate-100 text-slate-500" };
+                  const sv = l.survey;
                   return (
-                    <div key={l.id} className="grid grid-cols-[80px_90px_1fr_1fr_1fr_110px] gap-3 px-6 py-3.5 items-center text-sm">
+                    <div key={l.id} className="grid grid-cols-[70px_85px_1fr_1fr_1fr_110px_120px] gap-3 px-6 py-3.5 items-center text-sm">
                       <span className="tabular-nums text-slate-500 font-medium">
                         {new Date(l.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                       </span>
@@ -486,6 +601,25 @@ export default function Admin() {
                       <span className="text-slate-600 font-medium truncate">{l.counter_name || "—"}</span>
                       <span className="text-slate-900 font-semibold truncate">{l.operator_name}</span>
                       <span className={`text-xs font-bold px-2.5 py-1 rounded-full text-center ${a.cls}`}>{a.label}</span>
+                      {l.action === "complete" ? (
+                        <button
+                          onClick={() => setSurveyForm({ ticket_id: l.ticket_id, ticket_code: l.ticket_code, rating: sv?.rating || 0, feedback: sv?.feedback || "", photo: sv?.photo || "" })}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-primary transition-colors"
+                          data-testid={`admin-recap-survey-${l.ticket_code}-${l.id}`}
+                        >
+                          {sv?.rating ? (
+                            <span className="inline-flex items-center gap-1 text-amber-500">
+                              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> {sv.rating}/5
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">Isi survey</span>
+                          )}
+                          {sv?.photo && <Camera className="w-3.5 h-3.5 text-slate-400" />}
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
                     </div>
                   );
                 })}
@@ -494,9 +628,84 @@ export default function Admin() {
           </div>
         )}
 
+        {tab === "database" && (
+          <div data-testid="admin-database" className="max-w-3xl">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8">Database</h1>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+                <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-5">
+                  <Download className="w-6 h-6" />
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">Backup</h2>
+                <p className="mt-1 text-sm text-slate-500">Unduh seluruh data (kantor, layanan, loket, antrian, pengguna, pengaturan, laporan) sebagai file JSON.</p>
+                <Button onClick={downloadBackup} className="mt-6 rounded-xl bg-primary hover:bg-primary/90 font-semibold h-11" data-testid="admin-db-backup-button">
+                  <Download className="w-4 h-4 mr-2" /> Unduh Backup
+                </Button>
+              </div>
+              <div className="bg-white border border-rose-100 rounded-2xl p-8 shadow-sm">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-5">
+                  <Upload className="w-6 h-6" />
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">Restore</h2>
+                <p className="mt-1 text-sm text-slate-500">Pulihkan data dari file backup JSON. <span className="font-semibold text-rose-600">Seluruh data saat ini akan diganti.</span></p>
+                <label className="mt-6 inline-flex items-center gap-2 px-5 h-11 rounded-xl border-2 border-rose-200 text-rose-600 text-sm font-semibold cursor-pointer hover:bg-rose-50 transition-colors">
+                  <Upload className="w-4 h-4" /> Pilih File Backup
+                  <input type="file" accept="application/json,.json" className="hidden" onChange={restoreDb} data-testid="admin-db-restore-input" />
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "printers" && (
+          <div data-testid="admin-printers" className="max-w-5xl">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Printers</h1>
+              {branchSelect}
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
+              <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6">
+                <div>
+                  <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Printer Thermal 80mm — {currentBranch?.name}</h2>
+                  <p className="mt-1 text-xs text-slate-400">Konfigurasi printer & teks struk untuk kantor ini. Pencetakan menggunakan dialog print browser (kertas 80mm).</p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Nama Printer</Label>
+                  <Input value={printerCfg.printer_name} onChange={(e) => setPrinterCfg({ ...printerCfg, printer_name: e.target.value })} placeholder="cth: EPSON TM-T82 (80mm)" className="h-12 rounded-xl" data-testid="admin-printer-name" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Teks Header Struk</Label>
+                  <Textarea value={printerCfg.print_header} onChange={(e) => setPrinterCfg({ ...printerCfg, print_header: e.target.value })} placeholder={"cth:\nBANK SEJAHTERA\nKantor Pusat - Jl. Sudirman No. 1"} className="rounded-xl min-h-[80px]" data-testid="admin-printer-header" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Teks Footer Struk</Label>
+                  <Textarea value={printerCfg.print_footer} onChange={(e) => setPrinterCfg({ ...printerCfg, print_footer: e.target.value })} placeholder="cth: Mohon menunggu hingga nomor Anda dipanggil. Terima kasih." className="rounded-xl min-h-[80px]" data-testid="admin-printer-footer" />
+                </div>
+                <Button onClick={savePrinterCfg} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold h-12 px-8" data-testid="admin-printer-save-button">
+                  Simpan Pengaturan Printer
+                </Button>
+              </div>
+              <div className="bg-slate-100 rounded-2xl p-8 flex flex-col items-center">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 mb-5">Preview Struk 80mm</p>
+                <div className="bg-white w-[280px] px-5 py-6 text-center shadow-lg" style={{ fontFamily: "Poppins" }} data-testid="admin-printer-preview">
+                  <p className="text-sm font-bold text-slate-900 whitespace-pre-line">{printerCfg.print_header || settings.org_name}</p>
+                  <div className="my-3 border-t-2 border-dashed border-slate-300" />
+                  <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400">Nomor Antrian</p>
+                  <p className="text-5xl font-black tracking-tighter text-slate-900 my-1">A-001</p>
+                  <p className="text-sm font-semibold text-slate-700">Teller</p>
+                  <p className="mt-1 text-[11px] text-slate-500">{new Date().toLocaleString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+                  <div className="my-3 border-t-2 border-dashed border-slate-300" />
+                  <p className="text-[11px] text-slate-500 whitespace-pre-line">{printerCfg.print_footer || "Mohon menunggu hingga nomor Anda dipanggil. Terima kasih."}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {tab === "settings" && (
-          <div data-testid="admin-settings" className="max-w-2xl">
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8">Pengaturan</h1>
+          <div data-testid="admin-settings" className="max-w-6xl">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8">Pengaturan Aplikasi</h1>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
             <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6">
               <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Umum (Semua Cabang)</h2>
               <div className="space-y-2">
@@ -534,12 +743,16 @@ export default function Admin() {
                   <Input value={settings.logo_url || ""} onChange={(e) => setSettings({ ...settings, logo_url: e.target.value })} placeholder="https://... (kosongkan untuk ikon default)" className="h-12 rounded-xl flex-1" data-testid="admin-settings-logo-url" />
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Teks Footer (Frontend)</Label>
+                <Input value={settings.footer_text || ""} onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })} placeholder="cth: © 2026 Bank Sejahtera. Melayani dengan sepenuh hati." className="h-12 rounded-xl" data-testid="admin-settings-footer-text" />
+              </div>
               <Button onClick={saveSettings} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold h-12 px-8" data-testid="admin-settings-save-button">
                 Simpan Pengaturan
               </Button>
             </div>
 
-            <div className="mt-8 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6">
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Pengaturan Cabang</h2>
                 {branchSelect}
@@ -612,9 +825,55 @@ export default function Admin() {
                 </Button>
               </div>
             </div>
+            </div>
           </div>
         )}
       </main>
+
+      <Dialog open={!!surveyForm} onOpenChange={(o) => !o && setSurveyForm(null)}>
+        <DialogContent className="rounded-2xl" data-testid="admin-survey-dialog">
+          <DialogHeader>
+            <DialogTitle>Survey Kepuasan — {surveyForm?.ticket_code}</DialogTitle>
+          </DialogHeader>
+          {surveyForm && (
+            <div className="space-y-5 mt-2">
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Tingkat Kepuasan</Label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button key={n} onClick={() => setSurveyForm({ ...surveyForm, rating: n })} className="p-1 transition-transform hover:scale-110" data-testid={`admin-survey-star-${n}`}>
+                      <Star className={`w-8 h-8 ${n <= surveyForm.rating ? "text-amber-400 fill-amber-400" : "text-slate-300"}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Saran / Masukan</Label>
+                <Textarea value={surveyForm.feedback} onChange={(e) => setSurveyForm({ ...surveyForm, feedback: e.target.value })} className="rounded-xl min-h-[90px]" data-testid="admin-survey-feedback" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Lampiran Foto</Label>
+                {surveyForm.photo ? (
+                  <div className="relative inline-block">
+                    <img src={surveyForm.photo} alt="Lampiran" className="h-28 rounded-xl border border-slate-200 object-cover" data-testid="admin-survey-photo-preview" />
+                    <button onClick={() => setSurveyForm({ ...surveyForm, photo: "" })} className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center" data-testid="admin-survey-photo-remove">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-500 cursor-pointer hover:border-primary hover:text-primary transition-colors w-fit">
+                    <Camera className="w-4 h-4" /> Pilih Foto
+                    <input type="file" accept="image/*" className="hidden" onChange={onSurveyEditPhoto} data-testid="admin-survey-photo-input" />
+                  </label>
+                )}
+              </div>
+              <Button onClick={saveSurveyEdit} className="w-full rounded-xl bg-primary hover:bg-primary/90 h-11 font-semibold" data-testid="admin-survey-save-button">
+                Simpan Survey
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!usrForm} onOpenChange={(o) => !o && setUsrForm(null)}>
         <DialogContent className="rounded-2xl" data-testid="admin-user-dialog">

@@ -132,36 +132,56 @@ export default function Kiosk() {
               className="w-full max-w-md"
               data-testid="kiosk-ticket-result"
             >
-              <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
-                <div className="bg-primary px-8 py-6 text-center">
-                  <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/70">Nomor Antrian Anda</p>
-                </div>
-                <div className="px-8 py-10 text-center border-b-2 border-dashed border-slate-200">
-                  <p className="text-7xl sm:text-8xl font-black tracking-tighter text-slate-900 tabular-nums" data-testid="kiosk-ticket-code">
-                    {ticket.code}
-                  </p>
-                  <p className="mt-4 text-lg font-semibold text-primary">{ticket.service_name}</p>
-                </div>
-                <div className="px-8 py-6 flex items-center justify-between text-sm text-slate-500">
-                  <span className="inline-flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-amber-500" />
-                    {ticket.waiting_ahead} antrian di depan Anda
-                  </span>
-                  <Printer className="w-5 h-5 text-slate-300" />
-                </div>
+              <div id="print-area" className="bg-white rounded-2xl shadow-2xl border border-slate-200 px-7 py-8 text-center font-sans" data-testid="kiosk-receipt">
+                {settings.print_header ? (
+                  <p className="text-sm font-bold text-slate-900 whitespace-pre-line">{settings.print_header}</p>
+                ) : (
+                  <p className="text-sm font-bold text-slate-900">{settings.org_name}</p>
+                )}
+                {settings.branch_name && <p className="text-xs text-slate-500 mt-0.5">{settings.branch_name}</p>}
+                <div className="my-4 border-t-2 border-dashed border-slate-300" />
+                <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-slate-400">Nomor Antrian</p>
+                <p className="text-6xl font-black tracking-tighter text-slate-900 tabular-nums my-2" data-testid="kiosk-ticket-code">
+                  {ticket.code}
+                </p>
+                <p className="text-base font-semibold text-slate-700">{ticket.service_name}</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  {new Date(ticket.created_at).toLocaleString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
+                <p className="mt-1 text-xs text-slate-500 inline-flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-500" /> {ticket.waiting_ahead} antrian di depan Anda
+                </p>
+                <div className="my-4 border-t-2 border-dashed border-slate-300" />
+                <p className="text-xs text-slate-500 whitespace-pre-line">
+                  {settings.print_footer || "Mohon menunggu hingga nomor Anda dipanggil. Terima kasih."}
+                </p>
               </div>
-              <button
-                onClick={() => setTicket(null)}
-                className="mt-8 w-full py-4 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800 active:scale-[0.98] transition-[background-color,transform] duration-200"
-                data-testid="kiosk-done-button"
-              >
-                Selesai
-              </button>
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => window.print()}
+                  className="py-4 rounded-2xl bg-primary text-white font-semibold hover:bg-primary/90 active:scale-[0.98] transition-[background-color,transform] duration-200 inline-flex items-center justify-center gap-2"
+                  data-testid="kiosk-print-button"
+                >
+                  <Printer className="w-5 h-5" /> Cetak Tiket
+                </button>
+                <button
+                  onClick={() => setTicket(null)}
+                  className="py-4 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800 active:scale-[0.98] transition-[background-color,transform] duration-200"
+                  data-testid="kiosk-done-button"
+                >
+                  Selesai
+                </button>
+              </div>
               <p className="mt-4 text-center text-xs text-slate-400">Kembali otomatis dalam beberapa detik...</p>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
+      {settings.footer_text && (
+        <footer className="px-8 py-5 text-center text-xs text-slate-400 font-medium" data-testid="kiosk-footer-text">
+          {settings.footer_text}
+        </footer>
+      )}
     </div>
   );
 }

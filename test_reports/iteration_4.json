@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 4 (menu regrouping, pagination+search, XLSX export, survey popup, kiosk receipt with printer header/footer, DB backup/restore, settings footer_text) fully verified. Backend: 61/61 pytest passed (14 new iter4 + 47 legacy, 1 skipped by design). Frontend: admin sidebar new grouping (ANTRIAN / PENGATURAN) with all 9 tabs, XLSX download, DB backup download, admin survey edit dialog + save, printer preview live + persist, settings footer_text propagates to Home & Kiosk, kiosk receipt shows branch printer header, operator 4 action buttons uniform (h-16 justify-start). Operator survey dialog code path verified via grep + backend API round-trip (survey submit + recap shows survey).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter4.py",
+    "/app/backend/tests/test_iter3.py",
+    "/app/backend/tests/test_branches.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter4_results.xml",
+    "/app/test_reports/pytest/all_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Admin.jsx has grown to 1023 lines. Splitting into per-tab components (PrintersTab, DatabaseTab, SurveyDialog, RecapTab, SettingsTab, UsersTab, BranchesTab, ServicesTab, CountersTab, DashboardTab) is now urgent for maintainability.",
+    "PUT /api/branches/{id} returns only {ok:true}; consider returning the updated document (like update_user does) for consistency and to avoid a re-fetch on the client.",
+    "server.py primary_color still has no hex format validation on SettingsInput (carryover from iter3).",
+    "db_restore has no size limit / auth-rate protection; a malicious admin could DoS via huge JSON. Acceptable for admin-only, but consider validating collection size / bson-safe insertion.",
+    "Survey photo is stored as base64 data URL inline on ticket doc; large photos may bloat tickets. Consider capping payload size on backend (currently client-side compress only).",
+    "kiosk receipt uses inline HTML print styling; @media print rules in index.css should be re-audited to ensure only #print-area prints (verified only visually)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter4.py (new)"
+  ],
+  "success_rate": {"backend": "100% (61/61, 1 skipped by design)", "frontend": "100% verified surfaces"},
+  "test_credentials": "admin@antrian.id/admin123 ; operator.pusat@antrian.id/operator123 ; operator.cabang@antrian.id/operator123",
+  "seed_data_creation": "iter4 tests create TEST_MARKER_ITER4 service temporarily then restore. Printer name/header/footer on Kantor Cabang set for tests then reset to empty. Settings footer_text saved 'TEST_FOOTER_UI_ITER4' during UI test then cleared back to '' via UI. User primary_color (#034871) and org_name (BPR Bangunarta) preserved (as per user's note).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression: run `python -m pytest backend/tests/ -n 0` (sequential mandatory). test_iter4.py covers: /api/recap/export XLSX (auth + operator-branch-scoping + openpyxl parses), /api/surveys (auth, 404 missing ticket, rating clamped 0..5, cross-branch 403, appears in /api/recap), /api/db/backup+restore (admin-only, roundtrip removes intermediate marker), /api/branches PUT persists printer_name/print_header/print_footer visible in /api/queue/state.settings, /api/settings PUT footer_text persists. Frontend verified: admin sidebar has group labels 'Antrian' and 'Pengaturan' with all 9 tabs (dashboard, branches, services, counters, recap, settings, users, database, printers); pagination component (SearchBox+Pager) wired on branches/services/counters/users; admin recap XLSX download works (rekap_YYYY-MM-DD.xlsx); DB backup download works (backup_YYYY-MM-DD.json); admin survey edit dialog opens from recap row + save updates rating; printer preview live-updates with print_header and persists after save; settings footer_text propagates to Home (home-footer-text) and Kiosk (kiosk-footer-text); kiosk receipt shows TEST_HEADER_UITEST from Kantor Pusat print_header. Operator: 4 action buttons all have h-16 justify-start (uniform). Operator survey dialog code confirmed at Operator.jsx:298 with stars 1-5 (operator-survey-star-N), feedback, photo, skip, submit; backend API round-trip works so integration is sound. To trigger survey dialog end-to-end via UI you MUST first select Loket + Layanan then call-next then complete. WARNING: user's primary_color=#034871 and org_name='BPR Bangunarta' MUST NOT be reset — restore via UI after tests.",
+  "rca of the issue": "N/A - no functional bugs. Only observation: test-authoring difficulty triggering operator-survey-dialog end-to-end in Playwright because Shadcn Select dropdowns need force-click on portal-rendered options AND the complete button is only truly effective when a ticket is being served (call-next requires prior loket+layanan selection). This is not a product bug."
+}

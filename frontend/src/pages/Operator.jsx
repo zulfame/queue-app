@@ -2,10 +2,13 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { ArrowLeft, PhoneCall, RotateCcw, SkipForward, CheckCircle2, LogOut, Star, Undo2 } from "lucide-react";
+import { ArrowLeft, PhoneCall, RotateCcw, SkipForward, CheckCircle2, LogOut, Star, Undo2, Camera, X } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Textarea } from "../components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { api, formatApiErrorDetail } from "../lib/api";
+import { fileToDataUrl } from "../lib/image";
 import { useQueueSocket } from "../hooks/useQueueSocket";
 import { useAuth } from "../context/AuthContext";
 
@@ -18,6 +21,7 @@ export default function Operator() {
   const [counterId, setCounterId] = useState(localStorage.getItem("op_counter") || "");
   const [serviceId, setServiceId] = useState(localStorage.getItem("op_service") || "");
   const [busy, setBusy] = useState(false);
+  const [survey, setSurvey] = useState(null);
 
   const load = useCallback(() => {
     if (!branchId) return;
@@ -76,6 +80,37 @@ export default function Operator() {
       const { data } = await api.post("/queue/call-next", { counter_id: counterId, service_id: serviceId });
       toast.success(`Memanggil ${data.code}`);
     });
+  };
+
+  const completeTicket = () => {
+    if (!myTicket) return;
+    const t = myTicket;
+    doAction(async () => {
+      await api.post("/queue/complete", { ticket_id: t.id });
+      toast.success(`${t.code} selesai dilayani`);
+      setSurvey({ ticket_id: t.id, ticket_code: t.code, rating: 0, feedback: "", photo: "" });
+    });
+  };
+
+  const submitSurvey = async () => {
+    try {
+      await api.post("/surveys", { ticket_id: survey.ticket_id, rating: survey.rating, feedback: survey.feedback, photo: survey.photo });
+      toast.success("Survey kepuasan tersimpan");
+      setSurvey(null);
+    } catch (err) {
+      toast.error(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+    }
+  };
+
+  const onSurveyPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setSurvey((s) => ({ ...s, photo: dataUrl }));
+    } catch {
+      toast.error("Gagal memproses foto");
+    }
   };
 
   return (
@@ -167,15 +202,15 @@ export default function Operator() {
             )}
           </div>
 
-          <div className="space-y-4">
+          <div className="flex flex-col gap-3">
             <motion.div whileTap={{ scale: 0.98 }}>
               <Button
                 onClick={callNext}
                 disabled={busy}
-                className="w-full h-20 rounded-2xl bg-primary hover:bg-primary/90 text-white text-lg font-bold flex items-center justify-center gap-3"
+                className="w-full h-16 px-5 rounded-2xl bg-primary hover:bg-primary/90 text-white text-base font-bold flex items-center justify-start gap-3"
                 data-testid="operator-call-next-button"
               >
-                <PhoneCall className="w-6 h-6" /> Panggil Berikutnya
+                <PhoneCall className="w-5 h-5 shrink-0" /> Panggil Berikutnya
               </Button>
             </motion.div>
             <motion.div whileTap={{ scale: 0.98 }}>
@@ -183,20 +218,20 @@ export default function Operator() {
                 onClick={() => myTicket && doAction(() => api.post("/queue/recall", { ticket_id: myTicket.id }), `Memanggil ulang ${myTicket.code}`)}
                 disabled={busy || !myTicket}
                 variant="outline"
-                className="w-full h-14 rounded-2xl text-base font-semibold border-slate-300 flex items-center justify-center gap-3"
+                className="w-full h-16 px-5 rounded-2xl text-base font-semibold border-slate-300 flex items-center justify-start gap-3"
                 data-testid="operator-recall-button"
               >
-                <RotateCcw className="w-5 h-5" /> Panggil Ulang
+                <RotateCcw className="w-5 h-5 shrink-0" /> Panggil Ulang
               </Button>
             </motion.div>
             <motion.div whileTap={{ scale: 0.98 }}>
               <Button
-                onClick={() => myTicket && doAction(() => api.post("/queue/complete", { ticket_id: myTicket.id }), `${myTicket.code} selesai dilayani`)}
+                onClick={completeTicket}
                 disabled={busy || !myTicket}
-                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-base font-semibold flex items-center justify-center gap-3"
+                className="w-full h-16 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-base font-semibold flex items-center justify-start gap-3"
                 data-testid="operator-complete-button"
               >
-                <CheckCircle2 className="w-5 h-5" /> Selesai
+                <CheckCircle2 className="w-5 h-5 shrink-0" /> Selesai
               </Button>
             </motion.div>
             <motion.div whileTap={{ scale: 0.98 }}>
@@ -204,10 +239,10 @@ export default function Operator() {
                 onClick={() => myTicket && doAction(() => api.post("/queue/skip", { ticket_id: myTicket.id }), `${myTicket.code} dilewati`)}
                 disabled={busy || !myTicket}
                 variant="outline"
-                className="w-full h-14 rounded-2xl text-base font-semibold border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 flex items-center justify-center gap-3"
+                className="w-full h-16 px-5 rounded-2xl text-base font-semibold border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 flex items-center justify-start gap-3"
                 data-testid="operator-skip-button"
               >
-                <SkipForward className="w-5 h-5" /> Lewati
+                <SkipForward className="w-5 h-5 shrink-0" /> Lewati
               </Button>
             </motion.div>
           </div>
@@ -258,6 +293,71 @@ export default function Operator() {
           </div>
         )}
       </main>
+
+      <Dialog open={!!survey} onOpenChange={(o) => !o && setSurvey(null)}>
+        <DialogContent className="rounded-2xl" data-testid="operator-survey-dialog">
+          <DialogHeader>
+            <DialogTitle>Survey Kepuasan — {survey?.ticket_code}</DialogTitle>
+          </DialogHeader>
+          {survey && (
+            <div className="space-y-5 mt-2">
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Tingkat Kepuasan</p>
+                <div className="flex gap-2" data-testid="operator-survey-rating">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setSurvey({ ...survey, rating: n })}
+                      className="p-1 transition-transform hover:scale-110"
+                      data-testid={`operator-survey-star-${n}`}
+                    >
+                      <Star className={`w-9 h-9 ${n <= survey.rating ? "text-amber-400 fill-amber-400" : "text-slate-300"}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Saran / Masukan (opsional)</p>
+                <Textarea
+                  value={survey.feedback}
+                  onChange={(e) => setSurvey({ ...survey, feedback: e.target.value })}
+                  placeholder="Tulis saran atau masukan pengunjung..."
+                  className="rounded-xl min-h-[90px]"
+                  data-testid="operator-survey-feedback"
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Lampiran Foto (opsional)</p>
+                {survey.photo ? (
+                  <div className="relative inline-block">
+                    <img src={survey.photo} alt="Lampiran" className="h-28 rounded-xl border border-slate-200 object-cover" data-testid="operator-survey-photo-preview" />
+                    <button
+                      onClick={() => setSurvey({ ...survey, photo: "" })}
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center"
+                      data-testid="operator-survey-photo-remove"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-500 cursor-pointer hover:border-primary hover:text-primary transition-colors w-fit">
+                    <Camera className="w-4 h-4" /> Pilih / Ambil Foto
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onSurveyPhoto} data-testid="operator-survey-photo-input" />
+                  </label>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setSurvey(null)} className="flex-1 rounded-xl h-11 font-semibold" data-testid="operator-survey-skip-button">
+                  Lewati
+                </Button>
+                <Button onClick={submitSurvey} className="flex-1 rounded-xl h-11 bg-primary hover:bg-primary/90 font-semibold" data-testid="operator-survey-submit-button">
+                  Simpan Survey
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -100,6 +100,9 @@ export default function Home() {
         <p className="mt-16 text-xs text-slate-400 font-medium">
           Panel Operator & Admin memerlukan login • Kiosk & Monitor dapat diakses publik
         </p>
+        {settings.footer_text && (
+          <p className="mt-3 text-sm text-slate-500 font-medium" data-testid="home-footer-text">{settings.footer_text}</p>
+        )}
       </div>
     </div>
   );

@@ -63,6 +63,31 @@ code {
     font-variant-numeric: tabular-nums;
 }
 
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    #print-area, #print-area * {
+        visibility: visible;
+    }
+    #print-area {
+        position: absolute !important;
+        left: 0;
+        top: 0;
+        width: 72mm;
+        margin: 0;
+        padding: 4mm;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+    }
+}
+
+@page {
+    size: 80mm auto;
+    margin: 0;
+}
+
 @keyframes pulse-glow {
     0%, 100% { text-shadow: 0 0 40px rgba(251, 191, 36, 0.35); }
     50% { text-shadow: 0 0 90px rgba(251, 191, 36, 0.8); }

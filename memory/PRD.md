@@ -20,8 +20,10 @@ Buatkan aplikasi antrian dengan fitur untuk backend, layar monitor, ambil antria
 - branches: {id, name, address, active, ticker_text, promo_media[]}
 - services: {id, name, prefix, description, icon, active, branch_id}
 - counters: {id, name, service_ids, active, branch_id}
-- tickets: {id, number, code "A-001", service_id, status waiting|serving|done|skipped, counter_id/name, branch_id, date, created/called/finished_at}
-- settings (global): {org_name, tagline, ticker_text fallback, promo_media fallback}
+- tickets: {id, number, code "A-001", service_id, status waiting|serving|done|skipped, priority, counter_id/name, called_by, branch_id, date, created/called/finished_at}
+- users: {id, name, email, password_hash, role admin|operator, branch_id (penempatan operator)}
+- call_logs: rekap pemanggilan {at, date, action call|recall|skip|complete|restore, ticket_code, service/counter/branch_name, operator_name}
+- settings (global): {org_name, tagline, primary_color, logo_url, ticker_text fallback, promo_media fallback}
 - sequences: nomor urut per layanan per hari
 
 ## Halaman
@@ -36,11 +38,17 @@ Buatkan aplikasi antrian dengan fitur untuk backend, layar monitor, ambil antria
 - 2026-06: Redesign monitor tema terang + kolom promosi (gambar/video/YouTube)
 - 2026-06: Promo 16:9 + panel Status Loket semua loket
 - 2026-06: Multi-cabang penuh + isolasi antar cabang (test iteration_2: 28/28 backend pass, frontend pass)
+- 2026-06: Seeder 2 cabang + akun operator per cabang; kelola pengguna (RBAC admin/operator, operator terkunci di cabang penempatan, 403 lintas cabang); rekap pemanggilan dengan nama petugas; restore/prioritaskan antrian terlewati (priority queue); branding warna primary (CSS var) + logo (test iteration_3: 47/47 backend pass, frontend pass)
+
+## Kredensial Seeded
+- admin@antrian.id / admin123 (admin)
+- operator.pusat@antrian.id / operator123 (operator Kantor Pusat)
+- operator.cabang@antrian.id / operator123 (operator Kantor Cabang)
 
 ## Backlog / Next
 - P1: Redirect kembali ke halaman asal setelah login (login selalu → /admin)
-- P1: Upload gambar promosi langsung (object storage) tanpa URL manual
-- P2: Laporan/statistik historis (per hari/minggu) + grafik recharts
-- P2: Role terpisah operator vs admin (multi-user per cabang)
+- P1: Upload gambar promosi/logo langsung (object storage) tanpa URL manual
+- P2: Laporan/statistik historis (per hari/minggu) + grafik recharts + export rekap CSV
 - P2: Cetak tiket fisik (printer thermal) / QR tracking posisi antrian
-- P2: Pecah Admin.jsx menjadi komponen per-tab
+- P2: Pecah Admin.jsx (765 baris) menjadi komponen per-tab
+- P2: Validasi format hex primary_color di backend

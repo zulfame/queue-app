@@ -5,7 +5,7 @@ import {
   ArrowLeft, LogOut, LayoutDashboard, ListTree, DoorOpen, Settings2,
   Users, Clock, CheckCircle2, SkipForward, Trash2, Pencil, Plus, RefreshCw,
   Building2, MapPin, UserCog, History, Database, Printer, Download, Upload,
-  FileSpreadsheet, Star, Camera, X,
+  FileSpreadsheet, Star, Camera, X, Waves, ExternalLink,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -62,16 +62,16 @@ const TabButton = ({ t, tab, setTab }) => (
   <button
     onClick={() => setTab(t.id)}
     data-testid={`admin-tab-${t.id}`}
-    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${
-      tab === t.id ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100"
+    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap lg:w-full transition-colors duration-200 ${
+      tab === t.id ? "bg-primary text-white shadow-lg shadow-primary/30" : "text-slate-300 hover:bg-white/10 hover:text-white"
     }`}
   >
-    <t.icon className="w-4 h-4" /> {t.label}
+    <t.icon className="w-4 h-4 shrink-0" /> {t.label}
   </button>
 );
 
 export default function Admin() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [tab, setTab] = useState("dashboard");
   const [stats, setStats] = useState(null);
   const [overview, setOverview] = useState([]);
@@ -132,6 +132,10 @@ export default function Admin() {
 
   const handleErr = (err) => toast.error(formatApiErrorDetail(err.response?.data?.detail) || err.message);
   const currentBranch = branches.find((b) => b.id === branchId);
+  const brPaged = usePagedSearch(branches, ["name", "address"]);
+  const svPaged = usePagedSearch(services, ["name", "prefix", "description"]);
+  const ctPaged = usePagedSearch(counters, ["name"]);
+  const usPaged = usePagedSearch(users, ["name", "email", "role"]);
 
   const saveService = async () => {
     try {
@@ -300,30 +304,83 @@ export default function Admin() {
     { label: "Dilewati", value: stats.skipped, icon: SkipForward, color: "text-rose-600 bg-rose-50" },
   ] : [];
 
+  const crumb = (() => {
+    for (const e of MENU) {
+      if (e.type === "item" && e.id === tab) return { group: "Menu", label: e.label };
+      if (e.type === "group") {
+        const f = e.items.find((i) => i.id === tab);
+        if (f) return { group: e.label, label: f.label };
+      }
+    }
+    return { group: "Menu", label: "" };
+  })();
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row" data-testid="admin-page">
-      <aside className="lg:w-64 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 p-6 flex lg:flex-col gap-2 lg:gap-1 overflow-x-auto">
-        <Link to="/" className="hidden lg:inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-700 mb-6 transition-colors" data-testid="admin-back-link">
-          <ArrowLeft className="w-4 h-4" /> Beranda
-        </Link>
-        {MENU.map((entry, gi) =>
-          entry.type === "item" ? (
-            <TabButton key={entry.id} t={entry} tab={tab} setTab={setTab} />
+    <div className="min-h-screen bg-slate-100 flex flex-col lg:flex-row" data-testid="admin-page">
+      <aside className="lg:w-64 lg:shrink-0 bg-slate-900 flex lg:flex-col gap-2 lg:gap-0 items-center lg:items-stretch overflow-x-auto lg:overflow-visible px-4 py-3 lg:p-0 lg:sticky lg:top-0 lg:h-screen">
+        <div className="hidden lg:flex items-center gap-3 px-6 py-6 border-b border-white/10">
+          {settings.logo_url ? (
+            <img src={settings.logo_url} alt="Logo" className="w-10 h-10 rounded-xl object-contain bg-white p-0.5" />
           ) : (
-            <div key={gi} className="flex lg:flex-col gap-2 lg:gap-1 lg:mt-4">
-              <span className="hidden lg:block px-4 pb-1 text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">{entry.label}</span>
-              {entry.items.map((t) => (
-                <TabButton key={t.id} t={t} tab={tab} setTab={setTab} />
-              ))}
+            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
+              <Waves className="w-5 h-5 text-white" />
             </div>
-          )
-        )}
-        <button onClick={logout} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-500 hover:bg-rose-50 hover:text-rose-600 lg:mt-auto whitespace-nowrap transition-colors duration-200" data-testid="admin-logout-button">
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-white leading-tight truncate">{settings.org_name || "Admin"}</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-bold">Admin Panel</p>
+          </div>
+        </div>
+        <nav className="flex lg:flex-col gap-2 lg:gap-0.5 lg:px-3 lg:py-4 lg:flex-1 lg:overflow-y-auto items-center lg:items-stretch">
+          {MENU.map((entry, gi) =>
+            entry.type === "item" ? (
+              <TabButton key={entry.id} t={entry} tab={tab} setTab={setTab} />
+            ) : (
+              <div key={gi} className="flex lg:flex-col gap-2 lg:gap-0.5 lg:mt-5 items-center lg:items-stretch">
+                <span className="hidden lg:block px-4 pb-1.5 text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">{entry.label}</span>
+                {entry.items.map((t) => (
+                  <TabButton key={t.id} t={t} tab={tab} setTab={setTab} />
+                ))}
+              </div>
+            )
+          )}
+        </nav>
+        <div className="hidden lg:block px-3 py-4 border-t border-white/10">
+          <div className="flex items-center gap-3 px-3 pb-3">
+            <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-sm uppercase" data-testid="admin-user-avatar">
+              {(user?.name || user?.email || "A").charAt(0)}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white truncate" data-testid="admin-user-name">{user?.name || user?.email}</p>
+              <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">{user?.role === "admin" ? "Administrator" : "Operator"}</p>
+            </div>
+          </div>
+          <button onClick={logout} className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-300 hover:bg-rose-500/15 hover:text-rose-400 w-full transition-colors duration-200" data-testid="admin-logout-button">
+            <LogOut className="w-4 h-4" /> Keluar
+          </button>
+        </div>
+        <button onClick={logout} className="lg:hidden flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-300 hover:text-rose-400 whitespace-nowrap" data-testid="admin-logout-button-mobile">
           <LogOut className="w-4 h-4" /> Keluar
         </button>
       </aside>
 
-      <main className="flex-1 p-6 lg:p-10 max-w-6xl">
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="bg-white border-b border-slate-200 px-6 lg:px-10 py-4 flex items-center justify-between sticky top-0 z-20" data-testid="admin-topbar">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">{crumb.group}</p>
+            <h2 className="text-base font-bold text-slate-900">{crumb.label}</h2>
+          </div>
+          <div className="flex items-center gap-5">
+            <span className="hidden sm:block text-xs font-medium text-slate-400">
+              {new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            </span>
+            <Link to="/" className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-primary transition-colors" data-testid="admin-back-link">
+              <ExternalLink className="w-3.5 h-3.5" /> Lihat Situs
+            </Link>
+          </div>
+        </header>
+
+        <main className="flex-1 p-6 lg:p-10 max-w-6xl w-full">
         {tab === "dashboard" && (
           <div data-testid="admin-dashboard">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
@@ -829,6 +886,7 @@ export default function Admin() {
           </div>
         )}
       </main>
+      </div>
 
       <Dialog open={!!surveyForm} onOpenChange={(o) => !o && setSurveyForm(null)}>
         <DialogContent className="rounded-2xl" data-testid="admin-survey-dialog">

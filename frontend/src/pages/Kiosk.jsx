@@ -5,24 +5,28 @@ import { ArrowLeft, Printer, Clock } from "lucide-react";
 import { api } from "../lib/api";
 import { useQueueSocket } from "../hooks/useQueueSocket";
 import { getServiceIcon } from "../lib/icons";
+import { BranchPicker } from "../components/BranchPicker";
 
 export default function Kiosk() {
   const [state, setState] = useState(null);
   const [ticket, setTicket] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [branchId, setBranchId] = useState(localStorage.getItem("kiosk_branch") || "");
   const timerRef = useRef(null);
 
   const load = useCallback(() => {
-    api.get("/queue/state").then(({ data }) => setState(data)).catch(() => {});
-  }, []);
+    if (!branchId) return;
+    api.get(`/queue/state?branch_id=${branchId}`).then(({ data }) => setState(data)).catch(() => {});
+  }, [branchId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useQueueSocket(useCallback((msg) => {
+    if (msg.branch_id && msg.branch_id !== branchId) return;
     if (msg.type === "update" || msg.type === "call") load();
-  }, [load]));
+  }, [load, branchId]));
 
   const takeTicket = async (serviceId) => {
     if (busy) return;
@@ -40,13 +44,37 @@ export default function Kiosk() {
 
   const settings = state?.settings || {};
 
+  if (!branchId) {
+    return (
+      <BranchPicker
+        subtitle="Pilih kantor cabang untuk perangkat kiosk ini"
+        onSelect={(b) => {
+          localStorage.setItem("kiosk_branch", b.id);
+          setBranchId(b.id);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col" data-testid="kiosk-page">
       <header className="px-8 py-6 flex items-center justify-between">
         <Link to="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-700 transition-colors" data-testid="kiosk-back-link">
           <ArrowLeft className="w-4 h-4" /> Beranda
         </Link>
-        <span className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">{settings.org_name}</span>
+        <div className="flex items-center gap-4">
+          <span className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">{settings.org_name}</span>
+          {settings.branch_name && (
+            <button
+              onClick={() => { localStorage.removeItem("kiosk_branch"); setBranchId(""); setState(null); }}
+              className="text-xs font-bold px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+              data-testid="kiosk-branch-badge"
+              title="Klik untuk ganti cabang"
+            >
+              {settings.branch_name}
+            </button>
+          )}
+        </div>
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center px-6 pb-16">

@@ -5,6 +5,7 @@ import Marquee from "react-fast-marquee";
 import { Volume2, VolumeX, ArrowLeft, Clock, Waves, Megaphone } from "lucide-react";
 import { api } from "../lib/api";
 import { useQueueSocket } from "../hooks/useQueueSocket";
+import { BranchPicker } from "../components/BranchPicker";
 
 function useClock() {
   const [now, setNow] = useState(new Date());
@@ -44,14 +45,16 @@ export default function Monitor() {
   const [state, setState] = useState(null);
   const [lastCall, setLastCall] = useState(null);
   const [voiceOn, setVoiceOn] = useState(false);
+  const [branchId, setBranchId] = useState(localStorage.getItem("monitor_branch") || "");
   const voiceOnRef = useRef(false);
   const speechQueue = useRef([]);
   const speaking = useRef(false);
   const now = useClock();
 
   const load = useCallback(() => {
-    api.get("/queue/state").then(({ data }) => setState(data)).catch(() => {});
-  }, []);
+    if (!branchId) return;
+    api.get(`/queue/state?branch_id=${branchId}`).then(({ data }) => setState(data)).catch(() => {});
+  }, [branchId]);
 
   useEffect(() => {
     load();
@@ -106,6 +109,7 @@ export default function Monitor() {
   }, [playChime, processQueue]);
 
   useQueueSocket(useCallback((msg) => {
+    if (msg.branch_id && msg.branch_id !== branchId) return;
     if (msg.type === "call") {
       setLastCall(msg.ticket);
       load();
@@ -113,7 +117,7 @@ export default function Monitor() {
     } else if (msg.type === "update") {
       load();
     }
-  }, [load, announce]));
+  }, [load, announce, branchId]));
 
   const toggleVoice = () => {
     const next = !voiceOn;
@@ -147,6 +151,18 @@ export default function Monitor() {
     return () => clearInterval(t);
   }, [promos.length]);
 
+  if (!branchId) {
+    return (
+      <BranchPicker
+        subtitle="Pilih kantor cabang yang ditampilkan di layar monitor ini"
+        onSelect={(b) => {
+          localStorage.setItem("monitor_branch", b.id);
+          setBranchId(b.id);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen h-screen flex flex-col overflow-hidden bg-slate-100" data-testid="monitor-page">
       <header className="bg-white border-b border-slate-200 flex items-center justify-between px-8 py-4 shrink-0">
@@ -158,7 +174,19 @@ export default function Monitor() {
             <Waves className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">{settings.org_name}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
+              {settings.org_name}
+              {settings.branch_name && (
+                <button
+                  onClick={() => { localStorage.removeItem("monitor_branch"); setBranchId(""); setState(null); }}
+                  className="text-xs font-bold px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors tracking-normal"
+                  data-testid="monitor-branch-badge"
+                  title="Klik untuk ganti cabang"
+                >
+                  {settings.branch_name}
+                </button>
+              )}
+            </h1>
             <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400 font-bold">{settings.tagline || "Sistem Antrian Digital"}</p>
           </div>
         </div>

@@ -12,19 +12,42 @@ import { useAuth } from "../context/AuthContext";
 export default function Operator() {
   const { logout } = useAuth();
   const [state, setState] = useState(null);
+  const [branches, setBranches] = useState([]);
+  const [branchId, setBranchId] = useState(localStorage.getItem("op_branch") || "");
   const [counterId, setCounterId] = useState(localStorage.getItem("op_counter") || "");
   const [serviceId, setServiceId] = useState(localStorage.getItem("op_service") || "");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    api.get("/queue/state").then(({ data }) => setState(data)).catch(() => {});
+    if (!branchId) return;
+    api.get(`/queue/state?branch_id=${branchId}`).then(({ data }) => setState(data)).catch(() => {});
+  }, [branchId]);
+
+  useEffect(() => {
+    api.get("/branches").then(({ data }) => {
+      const active = data.filter((b) => b.active);
+      setBranches(active);
+      if (!localStorage.getItem("op_branch") && active[0]) setBranchId(active[0].id);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useQueueSocket(useCallback(() => load(), [load]));
+  useQueueSocket(useCallback((msg) => {
+    if (msg.branch_id && msg.branch_id !== branchId) return;
+    load();
+  }, [load, branchId]));
 
+  useEffect(() => { if (branchId) localStorage.setItem("op_branch", branchId); }, [branchId]);
   useEffect(() => { if (counterId) localStorage.setItem("op_counter", counterId); }, [counterId]);
   useEffect(() => { if (serviceId) localStorage.setItem("op_service", serviceId); }, [serviceId]);
+
+  const changeBranch = (v) => {
+    setBranchId(v);
+    setCounterId("");
+    setServiceId("");
+    localStorage.removeItem("op_counter");
+    localStorage.removeItem("op_service");
+  };
 
   const myTicket = (state?.serving || []).find((t) => t.counter_id === counterId) || null;
   const service = (state?.services || []).find((s) => s.id === serviceId);
@@ -67,7 +90,20 @@ export default function Operator() {
       </header>
 
       <main className="max-w-5xl mx-auto p-6 space-y-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Kantor Cabang</label>
+            <Select value={branchId} onValueChange={changeBranch}>
+              <SelectTrigger className="h-12 rounded-xl bg-white" data-testid="operator-branch-select">
+                <SelectValue placeholder="Pilih cabang" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={b.id} data-testid={`operator-branch-option-${b.id}`}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Loket Saya</label>
             <Select value={counterId} onValueChange={setCounterId}>

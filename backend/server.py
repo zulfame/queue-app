@@ -133,12 +133,22 @@ class ServiceInput(BaseModel):
     description: str = ""
     icon: str = "users"
     active: bool = True
+    branch_id: Optional[str] = None
 
 
 class CounterInput(BaseModel):
     name: str
     service_ids: List[str] = []
     active: bool = True
+    branch_id: Optional[str] = None
+
+
+class BranchInput(BaseModel):
+    name: str
+    address: str = ""
+    active: bool = True
+    ticker_text: str = ""
+    promo_media: List["PromoItem"] = []
 
 
 class PromoItem(BaseModel):
@@ -238,8 +248,9 @@ async def me(request: Request):
 
 # ---------- Services ----------
 @api_router.get("/services")
-async def list_services():
-    return await db.services.find({}, {"_id": 0}).sort("created_at", 1).to_list(100)
+async def list_services(branch_id: Optional[str] = None):
+    q = {"branch_id": branch_id} if branch_id else {}
+    return await db.services.find(q, {"_id": 0}).sort("created_at", 1).to_list(200)
 
 
 @api_router.post("/services")
@@ -276,8 +287,9 @@ async def delete_service(service_id: str, request: Request):
 
 # ---------- Counters (loket) ----------
 @api_router.get("/counters")
-async def list_counters():
-    return await db.counters.find({}, {"_id": 0}).sort("created_at", 1).to_list(100)
+async def list_counters(branch_id: Optional[str] = None):
+    q = {"branch_id": branch_id} if branch_id else {}
+    return await db.counters.find(q, {"_id": 0}).sort("created_at", 1).to_list(200)
 
 
 @api_router.post("/counters")
@@ -326,6 +338,45 @@ async def update_settings(body: SettingsInput, request: Request):
     return {"ok": True}
 
 
+# ---------- Branches (kantor cabang) ----------
+@api_router.get("/branches")
+async def list_branches():
+    return await db.branches.find({}, {"_id": 0}).sort("created_at", 1).to_list(100)
+
+
+@api_router.post("/branches")
+async def create_branch(body: BranchInput, request: Request):
+    await get_current_user(request)
+    doc = body.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    doc["created_at"] = now_iso()
+    await db.branches.insert_one({**doc})
+    await manager.broadcast({"type": "update"})
+    return doc
+
+
+@api_router.put("/branches/{branch_id}")
+async def update_branch(branch_id: str, body: BranchInput, request: Request):
+    await get_current_user(request)
+    res = await db.branches.update_one({"id": branch_id}, {"$set": body.model_dump()})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Cabang tidak ditemukan")
+    await manager.broadcast({"type": "update", "branch_id": branch_id})
+    return {"ok": True}
+
+
+@api_router.delete("/branches/{branch_id}")
+async def delete_branch(branch_id: str, request: Request):
+    await get_current_user(request)
+    if await db.branches.count_documents({}) <= 1:
+        raise HTTPException(status_code=400, detail="Minimal harus ada satu cabang")
+    await db.branches.delete_one({"id": branch_id})
+    await db.services.delete_many({"branch_id": branch_id})
+    await db.counters.delete_many({"branch_id": branch_id})
+    await manager.broadcast({"type": "update"})
+    return {"ok": True}
+
+
 # ---------- Tickets ----------
 @api_router.post("/tickets")
 async def create_ticket(body: TicketInput):
@@ -350,6 +401,7 @@ async def create_ticket(body: TicketInput):
         "status": "waiting",
         "counter_id": None,
         "counter_name": None,
+        "branch_id": service.get("branch_id"),
         "date": today,
         "created_at": now_iso(),
         "called_at": None,
@@ -357,21 +409,30 @@ async def create_ticket(body: TicketInput):
     }
     await db.tickets.insert_one({**ticket})
     ahead = await db.tickets.count_documents({"date": today, "service_id": service["id"], "status": "waiting", "created_at": {"$lt": ticket["created_at"]}})
-    await manager.broadcast({"type": "update"})
+    await manager.broadcast({"type": "update", "branch_id": service.get("branch_id")})
     return {**ticket, "waiting_ahead": ahead}
 
 
 @api_router.get("/queue/state")
-async def queue_state():
+async def queue_state(branch_id: Optional[str] = None):
     today = today_str()
-    services = await db.services.find({"active": True}, {"_id": 0}).sort("created_at", 1).to_list(100)
-    counters = await db.counters.find({"active": True}, {"_id": 0}).sort("created_at", 1).to_list(100)
-    serving = await db.tickets.find({"date": today, "status": "serving"}, {"_id": 0}).sort("called_at", -1).to_list(50)
-    waiting = await db.tickets.find({"date": today, "status": "waiting"}, {"_id": 0}).sort("created_at", 1).to_list(100)
-    skipped = await db.tickets.find({"date": today, "status": "skipped"}, {"_id": 0}).sort("called_at", -1).to_list(10)
+    bq = {"branch_id": branch_id} if branch_id else {}
+    services = await db.services.find({"active": True, **bq}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    counters = await db.counters.find({"active": True, **bq}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    serving = await db.tickets.find({"date": today, "status": "serving", **bq}, {"_id": 0}).sort("called_at", -1).to_list(50)
+    waiting = await db.tickets.find({"date": today, "status": "waiting", **bq}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    skipped = await db.tickets.find({"date": today, "status": "skipped", **bq}, {"_id": 0}).sort("called_at", -1).to_list(10)
     for s in services:
         s["waiting_count"] = sum(1 for t in waiting if t["service_id"] == s["id"])
-    settings = await db.settings.find_one({"id": "main"}, {"_id": 0}) or {"org_name": "Antrian Digital", "tagline": "", "ticker_text": ""}
+    g = await db.settings.find_one({"id": "main"}, {"_id": 0}) or {"org_name": "Antrian Digital", "tagline": "", "ticker_text": "", "promo_media": []}
+    branch = await db.branches.find_one({"id": branch_id}, {"_id": 0}) if branch_id else None
+    settings = {
+        "org_name": g.get("org_name", ""),
+        "tagline": g.get("tagline", ""),
+        "ticker_text": (branch or {}).get("ticker_text") or g.get("ticker_text", ""),
+        "promo_media": (branch or {}).get("promo_media") or g.get("promo_media", []),
+        "branch_name": (branch or {}).get("name", ""),
+    }
     return {"services": services, "counters": counters, "serving": serving, "waiting": waiting, "skipped": skipped, "settings": settings}
 
 
@@ -394,9 +455,9 @@ async def call_next(body: CallNextInput, request: Request):
         projection={"_id": 0},
     )
     if not ticket:
-        await manager.broadcast({"type": "update"})
+        await manager.broadcast({"type": "update", "branch_id": counter.get("branch_id")})
         raise HTTPException(status_code=404, detail="Tidak ada antrian menunggu untuk layanan ini")
-    await manager.broadcast({"type": "call", "ticket": ticket})
+    await manager.broadcast({"type": "call", "ticket": ticket, "branch_id": ticket.get("branch_id")})
     return ticket
 
 
@@ -406,46 +467,60 @@ async def recall(body: TicketActionInput, request: Request):
     ticket = await db.tickets.find_one({"id": body.ticket_id}, {"_id": 0})
     if not ticket:
         raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
-    await manager.broadcast({"type": "call", "ticket": ticket})
+    await manager.broadcast({"type": "call", "ticket": ticket, "branch_id": ticket.get("branch_id")})
     return ticket
 
 
 @api_router.post("/queue/skip")
 async def skip(body: TicketActionInput, request: Request):
     await get_current_user(request)
-    res = await db.tickets.update_one({"id": body.ticket_id}, {"$set": {"status": "skipped", "finished_at": now_iso()}})
-    if res.matched_count == 0:
+    ticket = await db.tickets.find_one_and_update(
+        {"id": body.ticket_id},
+        {"$set": {"status": "skipped", "finished_at": now_iso()}},
+        return_document=ReturnDocument.AFTER, projection={"_id": 0},
+    )
+    if not ticket:
         raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
-    await manager.broadcast({"type": "update"})
+    await manager.broadcast({"type": "update", "branch_id": ticket.get("branch_id")})
     return {"ok": True}
 
 
 @api_router.post("/queue/complete")
 async def complete(body: TicketActionInput, request: Request):
     await get_current_user(request)
-    res = await db.tickets.update_one({"id": body.ticket_id}, {"$set": {"status": "done", "finished_at": now_iso()}})
-    if res.matched_count == 0:
+    ticket = await db.tickets.find_one_and_update(
+        {"id": body.ticket_id},
+        {"$set": {"status": "done", "finished_at": now_iso()}},
+        return_document=ReturnDocument.AFTER, projection={"_id": 0},
+    )
+    if not ticket:
         raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
-    await manager.broadcast({"type": "update"})
+    await manager.broadcast({"type": "update", "branch_id": ticket.get("branch_id")})
     return {"ok": True}
 
 
 @api_router.post("/queue/reset")
-async def reset_queue(request: Request):
+async def reset_queue(request: Request, branch_id: Optional[str] = None):
     await get_current_user(request)
     today = today_str()
-    await db.tickets.delete_many({"date": today})
-    await db.sequences.delete_many({"key": {"$regex": f":{today}$"}})
-    await manager.broadcast({"type": "update"})
+    bq = {"branch_id": branch_id} if branch_id else {}
+    if branch_id:
+        svc_ids = [s["id"] for s in await db.services.find({"branch_id": branch_id}, {"_id": 0, "id": 1}).to_list(200)]
+        await db.sequences.delete_many({"key": {"$in": [f"{sid}:{today}" for sid in svc_ids]}})
+    else:
+        await db.sequences.delete_many({"key": {"$regex": f":{today}$"}})
+    await db.tickets.delete_many({"date": today, **bq})
+    await manager.broadcast({"type": "update", "branch_id": branch_id})
     return {"ok": True}
 
 
 # ---------- Stats ----------
 @api_router.get("/stats")
-async def stats(request: Request):
+async def stats(request: Request, branch_id: Optional[str] = None):
     await get_current_user(request)
     today = today_str()
-    tickets = await db.tickets.find({"date": today}, {"_id": 0}).to_list(2000)
+    bq = {"branch_id": branch_id} if branch_id else {}
+    tickets = await db.tickets.find({"date": today, **bq}, {"_id": 0}).to_list(5000)
     total = len(tickets)
     waiting = sum(1 for t in tickets if t["status"] == "waiting")
     serving = sum(1 for t in tickets if t["status"] == "serving")
@@ -457,12 +532,31 @@ async def stats(request: Request):
             delta = (datetime.fromisoformat(t["called_at"]) - datetime.fromisoformat(t["created_at"])).total_seconds()
             wait_times.append(delta)
     avg_wait_min = round(sum(wait_times) / len(wait_times) / 60, 1) if wait_times else 0
-    services = await db.services.find({}, {"_id": 0}).to_list(100)
+    services = await db.services.find(bq, {"_id": 0}).to_list(200)
     per_service = []
     for s in services:
         st = [t for t in tickets if t["service_id"] == s["id"]]
         per_service.append({"name": s["name"], "prefix": s["prefix"], "total": len(st), "waiting": sum(1 for t in st if t["status"] == "waiting"), "done": sum(1 for t in st if t["status"] == "done")})
     return {"total": total, "waiting": waiting, "serving": serving, "done": done, "skipped": skipped, "avg_wait_min": avg_wait_min, "per_service": per_service}
+
+
+@api_router.get("/stats/overview")
+async def stats_overview(request: Request):
+    await get_current_user(request)
+    today = today_str()
+    branches = await db.branches.find({}, {"_id": 0}).sort("created_at", 1).to_list(100)
+    tickets = await db.tickets.find({"date": today}, {"_id": 0, "branch_id": 1, "status": 1}).to_list(10000)
+    result = []
+    for b in branches:
+        bt = [t for t in tickets if t.get("branch_id") == b["id"]]
+        result.append({
+            "id": b["id"], "name": b["name"], "active": b.get("active", True),
+            "total": len(bt),
+            "waiting": sum(1 for t in bt if t["status"] == "waiting"),
+            "serving": sum(1 for t in bt if t["status"] == "serving"),
+            "done": sum(1 for t in bt if t["status"] == "done"),
+        })
+    return {"branches": result}
 
 
 # ---------- Seeding ----------
@@ -509,9 +603,25 @@ async def seed():
         ]}},
     )
 
+    if await db.branches.count_documents({}) == 0:
+        g = await db.settings.find_one({"id": "main"}) or {}
+        await db.branches.insert_one({
+            "id": str(uuid.uuid4()), "name": "Kantor Pusat", "address": "",
+            "active": True,
+            "ticker_text": g.get("ticker_text", ""),
+            "promo_media": g.get("promo_media", []),
+            "created_at": now_iso(),
+        })
+    first_branch = await db.branches.find_one({}, {"_id": 0}, sort=[("created_at", 1)])
+    if first_branch:
+        orphan_q = {"$or": [{"branch_id": {"$exists": False}}, {"branch_id": None}]}
+        await db.services.update_many(orphan_q, {"$set": {"branch_id": first_branch["id"]}})
+        await db.counters.update_many(orphan_q, {"$set": {"branch_id": first_branch["id"]}})
+        await db.tickets.update_many(orphan_q, {"$set": {"branch_id": first_branch["id"]}})
+
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
-    await db.tickets.create_index([("date", 1), ("status", 1)])
+    await db.tickets.create_index([("date", 1), ("status", 1), ("branch_id", 1)])
     await db.tickets.create_index("id")
 
 

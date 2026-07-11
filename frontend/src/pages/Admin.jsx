@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, LayoutDashboard, ListTree, DoorOpen, Settings2,
   Users, Clock, CheckCircle2, SkipForward, Trash2, Pencil, Plus, RefreshCw,
+  Building2, MapPin,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -19,6 +20,7 @@ const ICON_OPTIONS = ["users", "banknote", "star", "pill", "heart-pulse", "file-
 
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "branches", label: "Cabang", icon: Building2 },
   { id: "services", label: "Layanan", icon: ListTree },
   { id: "counters", label: "Loket", icon: DoorOpen },
   { id: "settings", label: "Pengaturan", icon: Settings2 },
@@ -26,38 +28,63 @@ const TABS = [
 
 const emptyService = { name: "", prefix: "", description: "", icon: "users", active: true };
 const emptyCounter = { name: "", service_ids: [], active: true };
+const emptyBranch = { name: "", address: "", active: true };
 
 export default function Admin() {
   const { logout } = useAuth();
   const [tab, setTab] = useState("dashboard");
   const [stats, setStats] = useState(null);
+  const [overview, setOverview] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [branchId, setBranchId] = useState(localStorage.getItem("admin_branch") || "");
   const [services, setServices] = useState([]);
   const [counters, setCounters] = useState([]);
   const [settings, setSettings] = useState({ org_name: "", tagline: "", ticker_text: "", promo_media: [] });
+  const [branchCfg, setBranchCfg] = useState({ ticker_text: "", promo_media: [] });
   const [svcForm, setSvcForm] = useState(null);
   const [ctrForm, setCtrForm] = useState(null);
+  const [brForm, setBrForm] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [st, sv, ct, se] = await Promise.all([
-        api.get("/stats"), api.get("/services"), api.get("/counters"), api.get("/settings"),
+      const { data: brs } = await api.get("/branches");
+      setBranches(brs);
+      let bid = branchId;
+      if (!bid || !brs.find((b) => b.id === bid)) bid = brs[0]?.id || "";
+      if (bid !== branchId) { setBranchId(bid); return; }
+      if (!bid) return;
+      const [st, sv, ct, se, ov] = await Promise.all([
+        api.get(`/stats?branch_id=${bid}`),
+        api.get(`/services?branch_id=${bid}`),
+        api.get(`/counters?branch_id=${bid}`),
+        api.get("/settings"),
+        api.get("/stats/overview"),
       ]);
       setStats(st.data);
       setServices(sv.data);
       setCounters(ct.data);
       setSettings(se.data);
+      setOverview(ov.data.branches);
     } catch {}
-  }, []);
+  }, [branchId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (branchId) localStorage.setItem("admin_branch", branchId); }, [branchId]);
+  useEffect(() => {
+    const b = branches.find((x) => x.id === branchId);
+    if (b) setBranchCfg({ ticker_text: b.ticker_text || "", promo_media: b.promo_media || [] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId, branches.length]);
   useQueueSocket(useCallback(() => load(), [load]));
 
   const handleErr = (err) => toast.error(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+  const currentBranch = branches.find((b) => b.id === branchId);
 
   const saveService = async () => {
     try {
-      if (svcForm.id) await api.put(`/services/${svcForm.id}`, svcForm);
-      else await api.post("/services", svcForm);
+      const body = { ...svcForm, branch_id: svcForm.branch_id || branchId };
+      if (svcForm.id) await api.put(`/services/${svcForm.id}`, body);
+      else await api.post("/services", body);
       toast.success("Layanan disimpan");
       setSvcForm(null);
       load();
@@ -66,31 +93,72 @@ export default function Admin() {
 
   const saveCounter = async () => {
     try {
-      if (ctrForm.id) await api.put(`/counters/${ctrForm.id}`, ctrForm);
-      else await api.post("/counters", ctrForm);
+      const body = { ...ctrForm, branch_id: ctrForm.branch_id || branchId };
+      if (ctrForm.id) await api.put(`/counters/${ctrForm.id}`, body);
+      else await api.post("/counters", body);
       toast.success("Loket disimpan");
       setCtrForm(null);
       load();
     } catch (err) { handleErr(err); }
   };
 
+  const saveBranch = async () => {
+    try {
+      if (brForm.id) {
+        const orig = branches.find((x) => x.id === brForm.id) || {};
+        await api.put(`/branches/${brForm.id}`, { ticker_text: orig.ticker_text || "", promo_media: orig.promo_media || [], ...brForm });
+      } else {
+        await api.post("/branches", brForm);
+      }
+      toast.success("Cabang disimpan");
+      setBrForm(null);
+      load();
+    } catch (err) { handleErr(err); }
+  };
+
   const saveSettings = async () => {
     try {
-      const payload = { ...settings, promo_media: (settings.promo_media || []).filter((m) => m.url.trim()) };
-      await api.put("/settings", payload);
-      setSettings(payload);
-      toast.success("Pengaturan disimpan");
+      await api.put("/settings", settings);
+      toast.success("Pengaturan umum disimpan");
+    } catch (err) { handleErr(err); }
+  };
+
+  const saveBranchCfg = async () => {
+    if (!currentBranch) return;
+    try {
+      await api.put(`/branches/${branchId}`, {
+        name: currentBranch.name,
+        address: currentBranch.address || "",
+        active: currentBranch.active,
+        ticker_text: branchCfg.ticker_text,
+        promo_media: (branchCfg.promo_media || []).filter((m) => m.url.trim()),
+      });
+      toast.success("Pengaturan cabang disimpan");
+      load();
     } catch (err) { handleErr(err); }
   };
 
   const resetQueue = async () => {
-    if (!window.confirm("Hapus semua antrian hari ini dan mulai dari nomor 1?")) return;
+    if (!window.confirm(`Hapus semua antrian hari ini di ${currentBranch?.name || "cabang ini"} dan mulai dari nomor 1?`)) return;
     try {
-      await api.post("/queue/reset");
+      await api.post(`/queue/reset?branch_id=${branchId}`);
       toast.success("Antrian hari ini direset");
       load();
     } catch (err) { handleErr(err); }
   };
+
+  const branchSelect = (
+    <Select value={branchId} onValueChange={setBranchId}>
+      <SelectTrigger className="w-52 h-10 rounded-xl bg-white" data-testid="admin-branch-select">
+        <SelectValue placeholder="Pilih cabang" />
+      </SelectTrigger>
+      <SelectContent>
+        {branches.map((b) => (
+          <SelectItem key={b.id} value={b.id} data-testid={`admin-branch-option-${b.id}`}>{b.name}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 
   const statCards = stats ? [
     { label: "Total Hari Ini", value: stats.total, icon: Users, color: "text-indigo-600 bg-indigo-50" },
@@ -125,11 +193,14 @@ export default function Admin() {
       <main className="flex-1 p-6 lg:p-10 max-w-6xl">
         {tab === "dashboard" && (
           <div data-testid="admin-dashboard">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Dashboard</h1>
-              <Button onClick={resetQueue} variant="outline" className="rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-semibold" data-testid="admin-reset-queue-button">
-                <RefreshCw className="w-4 h-4 mr-2" /> Reset Antrian
-              </Button>
+              <div className="flex items-center gap-3">
+                {branchSelect}
+                <Button onClick={resetQueue} variant="outline" className="rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-semibold" data-testid="admin-reset-queue-button">
+                  <RefreshCw className="w-4 h-4 mr-2" /> Reset Antrian
+                </Button>
+              </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
               {statCards.map((c) => (
@@ -161,16 +232,76 @@ export default function Admin() {
                 </div>
               </div>
             )}
+            {overview.length > 1 && (
+              <div className="mt-8 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm" data-testid="admin-branch-overview">
+                <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500 mb-6">Ringkasan Semua Cabang — Hari Ini</h2>
+                <div className="space-y-4">
+                  {overview.map((b) => (
+                    <div key={b.id} className={`flex items-center gap-4 rounded-xl px-4 py-3 ${b.id === branchId ? "bg-indigo-50" : ""}`}>
+                      <span className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center"><Building2 className="w-4 h-4" /></span>
+                      <span className="flex-1 font-semibold text-slate-700">{b.name}</span>
+                      <span className="text-sm text-amber-600 font-semibold tabular-nums">{b.waiting} menunggu</span>
+                      <span className="text-sm text-emerald-600 font-semibold tabular-nums">{b.done} selesai</span>
+                      <span className="text-sm font-bold text-slate-900 tabular-nums">{b.total} total</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "branches" && (
+          <div data-testid="admin-branches">
+            <div className="flex items-center justify-between mb-8">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Kantor Cabang</h1>
+              <Button onClick={() => setBrForm({ ...emptyBranch })} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold" data-testid="admin-add-branch-button">
+                <Plus className="w-4 h-4 mr-2" /> Tambah Cabang
+              </Button>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
+              {branches.map((b) => (
+                <div key={b.id} className="flex items-center gap-4 px-6 py-4">
+                  <span className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center"><Building2 className="w-5 h-5" /></span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900">{b.name}</p>
+                    {b.address && (
+                      <p className="text-xs text-slate-400 truncate inline-flex items-center gap-1"><MapPin className="w-3 h-3" /> {b.address}</p>
+                    )}
+                  </div>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${b.active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}`}>
+                    {b.active ? "Aktif" : "Nonaktif"}
+                  </span>
+                  <button onClick={() => setBrForm({ id: b.id, name: b.name, address: b.address || "", active: b.active })} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors" data-testid={`admin-edit-branch-${b.id}`}>
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (window.confirm(`Hapus cabang ${b.name}? Semua layanan & loket cabang ini ikut terhapus.`)) {
+                        try { await api.delete(`/branches/${b.id}`); toast.success("Cabang dihapus"); load(); } catch (err) { handleErr(err); }
+                      }
+                    }}
+                    className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
+                    data-testid={`admin-delete-branch-${b.id}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {tab === "services" && (
           <div data-testid="admin-services">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Layanan</h1>
-              <Button onClick={() => setSvcForm({ ...emptyService })} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold" data-testid="admin-add-service-button">
-                <Plus className="w-4 h-4 mr-2" /> Tambah Layanan
-              </Button>
+              <div className="flex items-center gap-3">
+                {branchSelect}
+                <Button onClick={() => setSvcForm({ ...emptyService })} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold" data-testid="admin-add-service-button">
+                  <Plus className="w-4 h-4 mr-2" /> Tambah Layanan
+                </Button>
+              </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
               {services.map((s) => (
@@ -201,11 +332,14 @@ export default function Admin() {
 
         {tab === "counters" && (
           <div data-testid="admin-counters">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Loket</h1>
-              <Button onClick={() => setCtrForm({ ...emptyCounter })} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold" data-testid="admin-add-counter-button">
-                <Plus className="w-4 h-4 mr-2" /> Tambah Loket
-              </Button>
+              <div className="flex items-center gap-3">
+                {branchSelect}
+                <Button onClick={() => setCtrForm({ ...emptyCounter })} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold" data-testid="admin-add-counter-button">
+                  <Plus className="w-4 h-4 mr-2" /> Tambah Loket
+                </Button>
+              </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
               {counters.map((c) => (
@@ -240,6 +374,7 @@ export default function Admin() {
           <div data-testid="admin-settings" className="max-w-2xl">
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8">Pengaturan</h1>
             <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6">
+              <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Umum (Semua Cabang)</h2>
               <div className="space-y-2">
                 <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Nama Instansi</Label>
                 <Input value={settings.org_name} onChange={(e) => setSettings({ ...settings, org_name: e.target.value })} className="h-12 rounded-xl" data-testid="admin-settings-org-name" />
@@ -248,29 +383,33 @@ export default function Admin() {
                 <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Tagline</Label>
                 <Input value={settings.tagline} onChange={(e) => setSettings({ ...settings, tagline: e.target.value })} className="h-12 rounded-xl" data-testid="admin-settings-tagline" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Teks Berjalan (Monitor)</Label>
-                <Input value={settings.ticker_text} onChange={(e) => setSettings({ ...settings, ticker_text: e.target.value })} className="h-12 rounded-xl" data-testid="admin-settings-ticker" />
-              </div>
               <Button onClick={saveSettings} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold h-12 px-8" data-testid="admin-settings-save-button">
                 Simpan Pengaturan
               </Button>
             </div>
 
-            <div className="mt-8 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-5">
+            <div className="mt-8 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Pengaturan Cabang</h2>
+                {branchSelect}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Teks Berjalan (Monitor)</Label>
+                <Input value={branchCfg.ticker_text} onChange={(e) => setBranchCfg({ ...branchCfg, ticker_text: e.target.value })} className="h-12 rounded-xl" data-testid="admin-settings-ticker" />
+              </div>
               <div>
-                <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Media Promosi (Monitor)</h2>
-                <p className="mt-1 text-xs text-slate-400">Gambar, video (mp4) atau link YouTube yang tampil bergantian di layar monitor</p>
+                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Media Promosi (Monitor)</h3>
+                <p className="mt-1 text-xs text-slate-400">Gambar, video (mp4) atau link YouTube yang tampil bergantian di layar monitor cabang ini</p>
               </div>
               <div className="space-y-3" data-testid="admin-promo-list">
-                {(settings.promo_media || []).map((m, idx) => (
+                {(branchCfg.promo_media || []).map((m, idx) => (
                   <div key={idx} className="flex items-center gap-3">
                     <Select
                       value={m.type}
                       onValueChange={(v) => {
-                        const list = [...settings.promo_media];
+                        const list = [...branchCfg.promo_media];
                         list[idx] = { ...list[idx], type: v };
-                        setSettings({ ...settings, promo_media: list });
+                        setBranchCfg({ ...branchCfg, promo_media: list });
                       }}
                     >
                       <SelectTrigger className="w-32 rounded-xl" data-testid={`admin-promo-type-${idx}`}><SelectValue /></SelectTrigger>
@@ -283,16 +422,16 @@ export default function Admin() {
                     <Input
                       value={m.url}
                       onChange={(e) => {
-                        const list = [...settings.promo_media];
+                        const list = [...branchCfg.promo_media];
                         list[idx] = { ...list[idx], url: e.target.value };
-                        setSettings({ ...settings, promo_media: list });
+                        setBranchCfg({ ...branchCfg, promo_media: list });
                       }}
                       placeholder="https://..."
                       className="flex-1 rounded-xl"
                       data-testid={`admin-promo-url-${idx}`}
                     />
                     <button
-                      onClick={() => setSettings({ ...settings, promo_media: settings.promo_media.filter((_, i) => i !== idx) })}
+                      onClick={() => setBranchCfg({ ...branchCfg, promo_media: branchCfg.promo_media.filter((_, i) => i !== idx) })}
                       className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
                       data-testid={`admin-promo-delete-${idx}`}
                     >
@@ -300,31 +439,58 @@ export default function Admin() {
                     </button>
                   </div>
                 ))}
-                {(settings.promo_media || []).length === 0 && (
+                {(branchCfg.promo_media || []).length === 0 && (
                   <p className="text-sm text-slate-400">Belum ada media promosi</p>
                 )}
               </div>
               <div className="flex items-center gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setSettings({ ...settings, promo_media: [...(settings.promo_media || []), { type: "image", url: "" }] })}
+                  onClick={() => setBranchCfg({ ...branchCfg, promo_media: [...(branchCfg.promo_media || []), { type: "image", url: "" }] })}
                   className="rounded-xl font-semibold"
                   data-testid="admin-promo-add-button"
                 >
                   <Plus className="w-4 h-4 mr-2" /> Tambah Media
                 </Button>
                 <Button
-                  onClick={saveSettings}
+                  onClick={saveBranchCfg}
                   className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold"
-                  data-testid="admin-promo-save-button"
+                  data-testid="admin-branch-settings-save-button"
                 >
-                  Simpan Media
+                  Simpan Pengaturan Cabang
                 </Button>
               </div>
             </div>
           </div>
         )}
       </main>
+
+      <Dialog open={!!brForm} onOpenChange={(o) => !o && setBrForm(null)}>
+        <DialogContent className="rounded-2xl" data-testid="admin-branch-dialog">
+          <DialogHeader>
+            <DialogTitle>{brForm?.id ? "Edit Cabang" : "Tambah Cabang"}</DialogTitle>
+          </DialogHeader>
+          {brForm && (
+            <div className="space-y-4 mt-2">
+              <div className="space-y-2">
+                <Label>Nama Cabang</Label>
+                <Input value={brForm.name} onChange={(e) => setBrForm({ ...brForm, name: e.target.value })} placeholder="cth: Cabang Jakarta Pusat" data-testid="admin-branch-name-input" />
+              </div>
+              <div className="space-y-2">
+                <Label>Alamat</Label>
+                <Input value={brForm.address} onChange={(e) => setBrForm({ ...brForm, address: e.target.value })} placeholder="cth: Jl. Sudirman No. 1" data-testid="admin-branch-address-input" />
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={brForm.active} onCheckedChange={(v) => setBrForm({ ...brForm, active: v })} data-testid="admin-branch-active-switch" />
+                <Label>Aktif</Label>
+              </div>
+              <Button onClick={saveBranch} disabled={!brForm.name} className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 h-11 font-semibold" data-testid="admin-branch-save-button">
+                Simpan
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!svcForm} onOpenChange={(o) => !o && setSvcForm(null)}>
         <DialogContent className="rounded-2xl" data-testid="admin-service-dialog">

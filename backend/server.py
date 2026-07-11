@@ -143,17 +143,17 @@ class CounterInput(BaseModel):
     branch_id: Optional[str] = None
 
 
+class PromoItem(BaseModel):
+    type: str = "image"
+    url: str
+
+
 class BranchInput(BaseModel):
     name: str
     address: str = ""
     active: bool = True
     ticker_text: str = ""
-    promo_media: List["PromoItem"] = []
-
-
-class PromoItem(BaseModel):
-    type: str = "image"
-    url: str
+    promo_media: List[PromoItem] = []
 
 
 class SettingsInput(BaseModel):

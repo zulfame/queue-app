@@ -19,7 +19,7 @@ const Branding = () => {
   return null;
 };
 
-const Protected = ({ children }) => {
+const Protected = ({ children, adminOnly = false }) => {
   const { user } = useAuth();
   if (user === null)
     return (
@@ -28,6 +28,7 @@ const Protected = ({ children }) => {
       </div>
     );
   if (user === false) return <Navigate to="/login" replace />;
+  if (adminOnly && user.role !== "admin") return <Navigate to="/operator" replace />;
   return children;
 };
 
@@ -42,7 +43,7 @@ function App() {
           <Route path="/kiosk" element={<Kiosk />} />
           <Route path="/monitor" element={<Monitor />} />
           <Route path="/operator" element={<Protected><Operator /></Protected>} />
-          <Route path="/admin" element={<Protected><Admin /></Protected>} />
+          <Route path="/admin" element={<Protected adminOnly><Admin /></Protected>} />
         </Routes>
       </BrowserRouter>
       <Toaster position="top-right" richColors />

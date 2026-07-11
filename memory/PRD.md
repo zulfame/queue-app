@@ -48,6 +48,8 @@ Buatkan aplikasi antrian dengan fitur untuk backend, layar monitor, ambil antria
 ## Sudah Diimplementasikan (lanjutan)
 - 2026-06: Menu admin bergrup (Dashboard / Antrian: Kantor-Layanan-Loket / Laporan / Pengaturan: Aplikasi-Pengguna-Database-Printers); pagination 10/hal + pencarian di 4 daftar; Laporan export XLSX; survey kepuasan popup setelah "Selesai" (rating/saran/foto, editable dari Laporan); print preview struk thermal 80mm di kiosk dengan header/footer configurable per cabang (tab Printers); Database backup & restore JSON; Pengaturan Aplikasi 2 kolom + teks footer frontend; tombol operator diseragamkan (test iteration_4: 61/61 backend pass, frontend pass)
 
+- 2026-06: Fix crash tab admin (hook usePagedSearch hilang); redesign admin jadi template modern: sidebar gelap (logo, grup menu, kartu user, logout) + topbar breadcrumb/tanggal/Lihat Situs; role-based routing (operator login → /operator, /admin khusus admin) (test iteration_5: frontend 100% pass)
+
 ## Backlog / Next
 - P1: Redirect kembali ke halaman asal setelah login (login selalu → /admin)
 - P1: Upload gambar promosi/logo langsung (object storage) tanpa URL manual

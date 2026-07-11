@@ -141,10 +141,16 @@ class CounterInput(BaseModel):
     active: bool = True
 
 
+class PromoItem(BaseModel):
+    type: str = "image"
+    url: str
+
+
 class SettingsInput(BaseModel):
     org_name: str
     tagline: str = ""
     ticker_text: str = ""
+    promo_media: List[PromoItem] = []
 
 
 class TicketInput(BaseModel):
@@ -307,7 +313,9 @@ async def delete_counter(counter_id: str, request: Request):
 @api_router.get("/settings")
 async def get_settings():
     s = await db.settings.find_one({"id": "main"}, {"_id": 0})
-    return s or {"id": "main", "org_name": "Antrian Digital", "tagline": "", "ticker_text": ""}
+    if s and "promo_media" not in s:
+        s["promo_media"] = []
+    return s or {"id": "main", "org_name": "Antrian Digital", "tagline": "", "ticker_text": "", "promo_media": []}
 
 
 @api_router.put("/settings")
@@ -490,7 +498,16 @@ async def seed():
             "id": "main", "org_name": "QueueFlow",
             "tagline": "Sistem Antrian Digital",
             "ticker_text": "Selamat datang. Mohon menunggu nomor antrian Anda dipanggil. Siapkan dokumen yang diperlukan agar pelayanan lebih cepat. Terima kasih.",
+            "promo_media": [],
         })
+    await db.settings.update_one(
+        {"id": "main", "promo_media": {"$exists": False}},
+        {"$set": {"promo_media": [
+            {"type": "image", "url": "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600"},
+            {"type": "image", "url": "https://images.unsplash.com/photo-1521791136064-7986c2920216?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600"},
+            {"type": "image", "url": "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600"},
+        ]}},
+    )
 
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")

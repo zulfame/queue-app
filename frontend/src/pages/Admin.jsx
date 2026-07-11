@@ -33,7 +33,7 @@ export default function Admin() {
   const [stats, setStats] = useState(null);
   const [services, setServices] = useState([]);
   const [counters, setCounters] = useState([]);
-  const [settings, setSettings] = useState({ org_name: "", tagline: "", ticker_text: "" });
+  const [settings, setSettings] = useState({ org_name: "", tagline: "", ticker_text: "", promo_media: [] });
   const [svcForm, setSvcForm] = useState(null);
   const [ctrForm, setCtrForm] = useState(null);
 
@@ -76,7 +76,9 @@ export default function Admin() {
 
   const saveSettings = async () => {
     try {
-      await api.put("/settings", settings);
+      const payload = { ...settings, promo_media: (settings.promo_media || []).filter((m) => m.url.trim()) };
+      await api.put("/settings", payload);
+      setSettings(payload);
       toast.success("Pengaturan disimpan");
     } catch (err) { handleErr(err); }
   };
@@ -253,6 +255,72 @@ export default function Admin() {
               <Button onClick={saveSettings} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold h-12 px-8" data-testid="admin-settings-save-button">
                 Simpan Pengaturan
               </Button>
+            </div>
+
+            <div className="mt-8 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-5">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Media Promosi (Monitor)</h2>
+                <p className="mt-1 text-xs text-slate-400">Gambar, video (mp4) atau link YouTube yang tampil bergantian di layar monitor</p>
+              </div>
+              <div className="space-y-3" data-testid="admin-promo-list">
+                {(settings.promo_media || []).map((m, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <Select
+                      value={m.type}
+                      onValueChange={(v) => {
+                        const list = [...settings.promo_media];
+                        list[idx] = { ...list[idx], type: v };
+                        setSettings({ ...settings, promo_media: list });
+                      }}
+                    >
+                      <SelectTrigger className="w-32 rounded-xl" data-testid={`admin-promo-type-${idx}`}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="image">Gambar</SelectItem>
+                        <SelectItem value="video">Video</SelectItem>
+                        <SelectItem value="youtube">YouTube</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={m.url}
+                      onChange={(e) => {
+                        const list = [...settings.promo_media];
+                        list[idx] = { ...list[idx], url: e.target.value };
+                        setSettings({ ...settings, promo_media: list });
+                      }}
+                      placeholder="https://..."
+                      className="flex-1 rounded-xl"
+                      data-testid={`admin-promo-url-${idx}`}
+                    />
+                    <button
+                      onClick={() => setSettings({ ...settings, promo_media: settings.promo_media.filter((_, i) => i !== idx) })}
+                      className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
+                      data-testid={`admin-promo-delete-${idx}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                {(settings.promo_media || []).length === 0 && (
+                  <p className="text-sm text-slate-400">Belum ada media promosi</p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setSettings({ ...settings, promo_media: [...(settings.promo_media || []), { type: "image", url: "" }] })}
+                  className="rounded-xl font-semibold"
+                  data-testid="admin-promo-add-button"
+                >
+                  <Plus className="w-4 h-4 mr-2" /> Tambah Media
+                </Button>
+                <Button
+                  onClick={saveSettings}
+                  className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold"
+                  data-testid="admin-promo-save-button"
+                >
+                  Simpan Media
+                </Button>
+              </div>
             </div>
           </div>
         )}

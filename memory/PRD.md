@@ -45,6 +45,9 @@ Buatkan aplikasi antrian dengan fitur untuk backend, layar monitor, ambil antria
 - operator.pusat@antrian.id / operator123 (operator Kantor Pusat)
 - operator.cabang@antrian.id / operator123 (operator Kantor Cabang)
 
+## Sudah Diimplementasikan (lanjutan)
+- 2026-06: Menu admin bergrup (Dashboard / Antrian: Kantor-Layanan-Loket / Laporan / Pengaturan: Aplikasi-Pengguna-Database-Printers); pagination 10/hal + pencarian di 4 daftar; Laporan export XLSX; survey kepuasan popup setelah "Selesai" (rating/saran/foto, editable dari Laporan); print preview struk thermal 80mm di kiosk dengan header/footer configurable per cabang (tab Printers); Database backup & restore JSON; Pengaturan Aplikasi 2 kolom + teks footer frontend; tombol operator diseragamkan (test iteration_4: 61/61 backend pass, frontend pass)
+
 ## Backlog / Next
 - P1: Redirect kembali ke halaman asal setelah login (login selalu → /admin)
 - P1: Upload gambar promosi/logo langsung (object storage) tanpa URL manual

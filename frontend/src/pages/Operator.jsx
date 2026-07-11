@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { ArrowLeft, PhoneCall, RotateCcw, SkipForward, CheckCircle2, LogOut } from "lucide-react";
+import { ArrowLeft, PhoneCall, RotateCcw, SkipForward, CheckCircle2, LogOut, Star, Undo2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { api, formatApiErrorDetail } from "../lib/api";
@@ -10,7 +10,8 @@ import { useQueueSocket } from "../hooks/useQueueSocket";
 import { useAuth } from "../context/AuthContext";
 
 export default function Operator() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const isLockedOperator = !!(user && user.role === "operator" && user.branch_id);
   const [state, setState] = useState(null);
   const [branches, setBranches] = useState([]);
   const [branchId, setBranchId] = useState(localStorage.getItem("op_branch") || "");
@@ -27,9 +28,11 @@ export default function Operator() {
     api.get("/branches").then(({ data }) => {
       const active = data.filter((b) => b.active);
       setBranches(active);
-      if (!localStorage.getItem("op_branch") && active[0]) setBranchId(active[0].id);
+      if (isLockedOperator) setBranchId(user.branch_id);
+      else if (!localStorage.getItem("op_branch") && active[0]) setBranchId(active[0].id);
     }).catch(() => {});
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLockedOperator]);
 
   useEffect(() => { load(); }, [load]);
   useQueueSocket(useCallback((msg) => {
@@ -83,6 +86,14 @@ export default function Operator() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <h1 className="text-lg font-bold text-slate-900">Panel Operator</h1>
+          {user && (
+            <span
+              className="ml-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold"
+              data-testid="operator-user-badge"
+            >
+              {user.name || user.email}
+            </span>
+          )}
         </div>
         <button onClick={logout} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-rose-600 transition-colors" data-testid="operator-logout-button">
           <LogOut className="w-4 h-4" /> Keluar
@@ -93,16 +104,22 @@ export default function Operator() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Kantor Cabang</label>
-            <Select value={branchId} onValueChange={changeBranch}>
-              <SelectTrigger className="h-12 rounded-xl bg-white" data-testid="operator-branch-select">
-                <SelectValue placeholder="Pilih cabang" />
-              </SelectTrigger>
-              <SelectContent>
-                {branches.map((b) => (
-                  <SelectItem key={b.id} value={b.id} data-testid={`operator-branch-option-${b.id}`}>{b.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {isLockedOperator ? (
+              <div className="h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center px-4 text-sm font-semibold text-slate-600" data-testid="operator-branch-locked">
+                {branches.find((b) => b.id === branchId)?.name || "Cabang Anda"}
+              </div>
+            ) : (
+              <Select value={branchId} onValueChange={changeBranch}>
+                <SelectTrigger className="h-12 rounded-xl bg-white" data-testid="operator-branch-select">
+                  <SelectValue placeholder="Pilih cabang" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id} data-testid={`operator-branch-option-${b.id}`}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Loket Saya</label>
@@ -137,7 +154,7 @@ export default function Operator() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-10 shadow-sm flex flex-col items-center justify-center text-center min-h-[320px]">
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">Sedang Dilayani</p>
-            <p className="mt-4 text-7xl sm:text-8xl font-black tracking-tighter tabular-nums text-indigo-600" data-testid="operator-current-ticket">
+            <p className="mt-4 text-7xl sm:text-8xl font-black tracking-tighter tabular-nums text-primary" data-testid="operator-current-ticket">
               {myTicket ? myTicket.code : "—"}
             </p>
             <p className="mt-3 text-base font-semibold text-slate-500">
@@ -155,7 +172,7 @@ export default function Operator() {
               <Button
                 onClick={callNext}
                 disabled={busy}
-                className="w-full h-20 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-lg font-bold flex items-center justify-center gap-3"
+                className="w-full h-20 rounded-2xl bg-primary hover:bg-primary/90 text-white text-lg font-bold flex items-center justify-center gap-3"
                 data-testid="operator-call-next-button"
               >
                 <PhoneCall className="w-6 h-6" /> Panggil Berikutnya
@@ -203,15 +220,43 @@ export default function Operator() {
             {waitingForService.slice(0, 15).map((t, i) => (
               <span
                 key={t.id}
-                className={`px-4 py-2 rounded-xl text-sm font-bold tabular-nums ${
-                  i === 0 ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
+                className={`px-4 py-2 rounded-xl text-sm font-bold tabular-nums inline-flex items-center gap-1.5 ${
+                  t.priority ? "bg-amber-500 text-white" : i === 0 ? "bg-primary text-white" : "bg-slate-100 text-slate-600"
                 }`}
               >
+                {t.priority && <Star className="w-3.5 h-3.5 fill-current" />}
                 {t.code}
               </span>
             ))}
           </div>
         </div>
+
+        {(state?.skipped || []).length > 0 && (
+          <div className="bg-white border border-rose-100 rounded-3xl p-8 shadow-sm" data-testid="operator-skipped-list">
+            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-rose-500 mb-2">Antrian Terlewati</h2>
+            <p className="text-xs text-slate-400 mb-5">Jika pengunjung kembali, prioritaskan agar dipanggil paling awal berikutnya.</p>
+            <div className="space-y-3">
+              {state.skipped.map((t) => (
+                <div key={t.id} className="flex items-center gap-4 rounded-2xl bg-rose-50/50 px-5 py-3">
+                  <span className="text-xl font-black tabular-nums text-slate-900">{t.code}</span>
+                  <span className="flex-1 text-sm font-semibold text-slate-500">{t.service_name}</span>
+                  <Button
+                    size="sm"
+                    onClick={() => doAction(async () => {
+                      await api.post("/queue/restore", { ticket_id: t.id });
+                      toast.success(`${t.code} diprioritaskan ke urutan terdepan`);
+                    })}
+                    disabled={busy}
+                    className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+                    data-testid={`operator-restore-${t.code}`}
+                  >
+                    <Undo2 className="w-4 h-4 mr-1.5" /> Prioritaskan
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

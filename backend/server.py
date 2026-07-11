@@ -83,6 +83,36 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+async def require_admin(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang dapat melakukan aksi ini")
+    return user
+
+
+def ensure_branch_access(user: dict, branch_id: Optional[str]):
+    if user.get("role") == "operator" and user.get("branch_id") and branch_id and user["branch_id"] != branch_id:
+        raise HTTPException(status_code=403, detail="Anda tidak memiliki akses ke antrian cabang ini")
+
+
+async def log_call(action: str, ticket: dict, user: dict):
+    branch = await db.branches.find_one({"id": ticket.get("branch_id")}, {"_id": 0, "name": 1})
+    await db.call_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "at": now_iso(),
+        "date": today_str(),
+        "action": action,
+        "ticket_id": ticket["id"],
+        "ticket_code": ticket["code"],
+        "service_name": ticket.get("service_name"),
+        "counter_name": ticket.get("counter_name"),
+        "branch_id": ticket.get("branch_id"),
+        "branch_name": (branch or {}).get("name", ""),
+        "operator_id": user["id"],
+        "operator_name": user.get("name", user.get("email", "")),
+    })
+
+
 # ---------- WebSocket manager ----------
 class ConnectionManager:
     def __init__(self):
@@ -161,6 +191,16 @@ class SettingsInput(BaseModel):
     tagline: str = ""
     ticker_text: str = ""
     promo_media: List[PromoItem] = []
+    primary_color: str = "#4f46e5"
+    logo_url: str = ""
+
+
+class UserInput(BaseModel):
+    name: str
+    email: str
+    password: Optional[str] = None
+    role: str = "operator"
+    branch_id: Optional[str] = None
 
 
 class TicketInput(BaseModel):
@@ -203,7 +243,7 @@ async def login(body: LoginInput, request: Request):
     from fastapi.responses import JSONResponse
     resp = JSONResponse({
         "access_token": access,
-        "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "admin")},
+        "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "admin"), "branch_id": user.get("branch_id")},
     })
     resp.set_cookie("access_token", access, httponly=True, secure=False, samesite="lax", max_age=900, path="/")
     resp.set_cookie("refresh_token", refresh, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
@@ -246,6 +286,70 @@ async def me(request: Request):
     return user
 
 
+# ---------- Users (kelola pengguna) ----------
+@api_router.get("/users")
+async def list_users(request: Request):
+    await require_admin(request)
+    return await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", 1).to_list(500)
+
+
+@api_router.post("/users")
+async def create_user(body: UserInput, request: Request):
+    await require_admin(request)
+    email = body.email.strip().lower()
+    if not body.password or len(body.password) < 6:
+        raise HTTPException(status_code=400, detail="Password minimal 6 karakter")
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar")
+    doc = {
+        "id": str(uuid.uuid4()), "name": body.name, "email": email,
+        "password_hash": hash_password(body.password),
+        "role": body.role if body.role in ("admin", "operator") else "operator",
+        "branch_id": body.branch_id if body.role == "operator" else None,
+        "created_at": now_iso(),
+    }
+    await db.users.insert_one({**doc})
+    doc.pop("password_hash")
+    return doc
+
+
+@api_router.put("/users/{user_id}")
+async def update_user(user_id: str, body: UserInput, request: Request):
+    await require_admin(request)
+    existing = await db.users.find_one({"id": user_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan")
+    email = body.email.strip().lower()
+    dup = await db.users.find_one({"email": email, "id": {"$ne": user_id}})
+    if dup:
+        raise HTTPException(status_code=400, detail="Email sudah digunakan pengguna lain")
+    update = {
+        "name": body.name, "email": email,
+        "role": body.role if body.role in ("admin", "operator") else "operator",
+        "branch_id": body.branch_id if body.role == "operator" else None,
+    }
+    if body.password:
+        if len(body.password) < 6:
+            raise HTTPException(status_code=400, detail="Password minimal 6 karakter")
+        update["password_hash"] = hash_password(body.password)
+    await db.users.update_one({"id": user_id}, {"$set": update})
+    return {"ok": True}
+
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, request: Request):
+    admin = await require_admin(request)
+    if admin["id"] == user_id:
+        raise HTTPException(status_code=400, detail="Tidak dapat menghapus akun sendiri")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan")
+    if target.get("role") == "admin" and await db.users.count_documents({"role": "admin"}) <= 1:
+        raise HTTPException(status_code=400, detail="Minimal harus ada satu admin")
+    await db.users.delete_one({"id": user_id})
+    return {"ok": True}
+
+
 # ---------- Services ----------
 @api_router.get("/services")
 async def list_services(branch_id: Optional[str] = None):
@@ -255,7 +359,7 @@ async def list_services(branch_id: Optional[str] = None):
 
 @api_router.post("/services")
 async def create_service(body: ServiceInput, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     doc = body.model_dump()
     doc["id"] = str(uuid.uuid4())
     doc["prefix"] = doc["prefix"].strip().upper()[:2]
@@ -267,7 +371,7 @@ async def create_service(body: ServiceInput, request: Request):
 
 @api_router.put("/services/{service_id}")
 async def update_service(service_id: str, body: ServiceInput, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     doc = body.model_dump()
     doc["prefix"] = doc["prefix"].strip().upper()[:2]
     res = await db.services.update_one({"id": service_id}, {"$set": doc})
@@ -279,7 +383,7 @@ async def update_service(service_id: str, body: ServiceInput, request: Request):
 
 @api_router.delete("/services/{service_id}")
 async def delete_service(service_id: str, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     await db.services.delete_one({"id": service_id})
     await manager.broadcast({"type": "update"})
     return {"ok": True}
@@ -294,7 +398,7 @@ async def list_counters(branch_id: Optional[str] = None):
 
 @api_router.post("/counters")
 async def create_counter(body: CounterInput, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     doc = body.model_dump()
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = now_iso()
@@ -305,7 +409,7 @@ async def create_counter(body: CounterInput, request: Request):
 
 @api_router.put("/counters/{counter_id}")
 async def update_counter(counter_id: str, body: CounterInput, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     res = await db.counters.update_one({"id": counter_id}, {"$set": body.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Loket tidak ditemukan")
@@ -315,7 +419,7 @@ async def update_counter(counter_id: str, body: CounterInput, request: Request):
 
 @api_router.delete("/counters/{counter_id}")
 async def delete_counter(counter_id: str, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     await db.counters.delete_one({"id": counter_id})
     await manager.broadcast({"type": "update"})
     return {"ok": True}
@@ -332,7 +436,7 @@ async def get_settings():
 
 @api_router.put("/settings")
 async def update_settings(body: SettingsInput, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     await db.settings.update_one({"id": "main"}, {"$set": body.model_dump()}, upsert=True)
     await manager.broadcast({"type": "update"})
     return {"ok": True}
@@ -346,7 +450,7 @@ async def list_branches():
 
 @api_router.post("/branches")
 async def create_branch(body: BranchInput, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     doc = body.model_dump()
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = now_iso()
@@ -357,7 +461,7 @@ async def create_branch(body: BranchInput, request: Request):
 
 @api_router.put("/branches/{branch_id}")
 async def update_branch(branch_id: str, body: BranchInput, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     res = await db.branches.update_one({"id": branch_id}, {"$set": body.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Cabang tidak ditemukan")
@@ -367,7 +471,7 @@ async def update_branch(branch_id: str, body: BranchInput, request: Request):
 
 @api_router.delete("/branches/{branch_id}")
 async def delete_branch(branch_id: str, request: Request):
-    await get_current_user(request)
+    await require_admin(request)
     if await db.branches.count_documents({}) <= 1:
         raise HTTPException(status_code=400, detail="Minimal harus ada satu cabang")
     await db.branches.delete_one({"id": branch_id})
@@ -399,8 +503,10 @@ async def create_ticket(body: TicketInput):
         "service_name": service["name"],
         "prefix": service["prefix"],
         "status": "waiting",
+        "priority": False,
         "counter_id": None,
         "counter_name": None,
+        "called_by": None,
         "branch_id": service.get("branch_id"),
         "date": today,
         "created_at": now_iso(),
@@ -432,16 +538,19 @@ async def queue_state(branch_id: Optional[str] = None):
         "ticker_text": (branch or {}).get("ticker_text") or g.get("ticker_text", ""),
         "promo_media": (branch or {}).get("promo_media") or g.get("promo_media", []),
         "branch_name": (branch or {}).get("name", ""),
+        "primary_color": g.get("primary_color", "#4f46e5"),
+        "logo_url": g.get("logo_url", ""),
     }
     return {"services": services, "counters": counters, "serving": serving, "waiting": waiting, "skipped": skipped, "settings": settings}
 
 
 @api_router.post("/queue/call-next")
 async def call_next(body: CallNextInput, request: Request):
-    await get_current_user(request)
+    user = await get_current_user(request)
     counter = await db.counters.find_one({"id": body.counter_id}, {"_id": 0})
     if not counter:
         raise HTTPException(status_code=404, detail="Loket tidak ditemukan")
+    ensure_branch_access(user, counter.get("branch_id"))
     today = today_str()
     await db.tickets.update_many(
         {"date": today, "counter_id": body.counter_id, "status": "serving"},
@@ -449,59 +558,87 @@ async def call_next(body: CallNextInput, request: Request):
     )
     ticket = await db.tickets.find_one_and_update(
         {"date": today, "service_id": body.service_id, "status": "waiting"},
-        {"$set": {"status": "serving", "counter_id": counter["id"], "counter_name": counter["name"], "called_at": now_iso()}},
-        sort=[("created_at", 1)],
+        {"$set": {"status": "serving", "counter_id": counter["id"], "counter_name": counter["name"], "called_at": now_iso(), "called_by": user.get("name", user.get("email", "")), "called_by_id": user["id"]}},
+        sort=[("priority", -1), ("created_at", 1)],
         return_document=ReturnDocument.AFTER,
         projection={"_id": 0},
     )
     if not ticket:
         await manager.broadcast({"type": "update", "branch_id": counter.get("branch_id")})
         raise HTTPException(status_code=404, detail="Tidak ada antrian menunggu untuk layanan ini")
+    await log_call("call", ticket, user)
     await manager.broadcast({"type": "call", "ticket": ticket, "branch_id": ticket.get("branch_id")})
     return ticket
 
 
 @api_router.post("/queue/recall")
 async def recall(body: TicketActionInput, request: Request):
-    await get_current_user(request)
+    user = await get_current_user(request)
     ticket = await db.tickets.find_one({"id": body.ticket_id}, {"_id": 0})
     if not ticket:
         raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
+    ensure_branch_access(user, ticket.get("branch_id"))
+    await log_call("recall", ticket, user)
     await manager.broadcast({"type": "call", "ticket": ticket, "branch_id": ticket.get("branch_id")})
     return ticket
 
 
 @api_router.post("/queue/skip")
 async def skip(body: TicketActionInput, request: Request):
-    await get_current_user(request)
+    user = await get_current_user(request)
+    existing = await db.tickets.find_one({"id": body.ticket_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
+    ensure_branch_access(user, existing.get("branch_id"))
     ticket = await db.tickets.find_one_and_update(
         {"id": body.ticket_id},
         {"$set": {"status": "skipped", "finished_at": now_iso()}},
         return_document=ReturnDocument.AFTER, projection={"_id": 0},
     )
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
+    await log_call("skip", ticket, user)
     await manager.broadcast({"type": "update", "branch_id": ticket.get("branch_id")})
     return {"ok": True}
 
 
 @api_router.post("/queue/complete")
 async def complete(body: TicketActionInput, request: Request):
-    await get_current_user(request)
+    user = await get_current_user(request)
+    existing = await db.tickets.find_one({"id": body.ticket_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
+    ensure_branch_access(user, existing.get("branch_id"))
     ticket = await db.tickets.find_one_and_update(
         {"id": body.ticket_id},
         {"$set": {"status": "done", "finished_at": now_iso()}},
         return_document=ReturnDocument.AFTER, projection={"_id": 0},
     )
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
+    await log_call("complete", ticket, user)
     await manager.broadcast({"type": "update", "branch_id": ticket.get("branch_id")})
     return {"ok": True}
 
 
+@api_router.post("/queue/restore")
+async def restore(body: TicketActionInput, request: Request):
+    user = await get_current_user(request)
+    existing = await db.tickets.find_one({"id": body.ticket_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Tiket tidak ditemukan")
+    ensure_branch_access(user, existing.get("branch_id"))
+    if existing.get("status") != "skipped":
+        raise HTTPException(status_code=400, detail="Hanya antrian yang terlewati yang dapat diprioritaskan kembali")
+    ticket = await db.tickets.find_one_and_update(
+        {"id": body.ticket_id},
+        {"$set": {"status": "waiting", "priority": True, "finished_at": None, "counter_id": None, "counter_name": None}},
+        return_document=ReturnDocument.AFTER, projection={"_id": 0},
+    )
+    await log_call("restore", ticket, user)
+    await manager.broadcast({"type": "update", "branch_id": ticket.get("branch_id")})
+    return ticket
+
+
 @api_router.post("/queue/reset")
 async def reset_queue(request: Request, branch_id: Optional[str] = None):
-    await get_current_user(request)
+    await require_admin(request)
     today = today_str()
     bq = {"branch_id": branch_id} if branch_id else {}
     if branch_id:
@@ -517,7 +654,9 @@ async def reset_queue(request: Request, branch_id: Optional[str] = None):
 # ---------- Stats ----------
 @api_router.get("/stats")
 async def stats(request: Request, branch_id: Optional[str] = None):
-    await get_current_user(request)
+    user = await get_current_user(request)
+    if user.get("role") == "operator" and user.get("branch_id"):
+        branch_id = user["branch_id"]
     today = today_str()
     bq = {"branch_id": branch_id} if branch_id else {}
     tickets = await db.tickets.find({"date": today, **bq}, {"_id": 0}).to_list(5000)
@@ -557,6 +696,18 @@ async def stats_overview(request: Request):
             "done": sum(1 for t in bt if t["status"] == "done"),
         })
     return {"branches": result}
+
+
+@api_router.get("/recap")
+async def recap(request: Request, branch_id: Optional[str] = None, date: Optional[str] = None):
+    user = await get_current_user(request)
+    if user.get("role") == "operator" and user.get("branch_id"):
+        branch_id = user["branch_id"]
+    q = {"date": date or today_str()}
+    if branch_id:
+        q["branch_id"] = branch_id
+    logs = await db.call_logs.find(q, {"_id": 0}).sort("at", -1).to_list(1000)
+    return {"logs": logs}
 
 
 # ---------- Seeding ----------
@@ -619,10 +770,47 @@ async def seed():
         await db.counters.update_many(orphan_q, {"$set": {"branch_id": first_branch["id"]}})
         await db.tickets.update_many(orphan_q, {"$set": {"branch_id": first_branch["id"]}})
 
+    # Seed v2: cabang kedua + akun operator per cabang (sekali saja)
+    if first_branch and await db.meta.find_one({"key": "seed_v2_done"}) is None:
+        base = now_iso()
+        branch2 = {
+            "id": str(uuid.uuid4()), "name": "Kantor Cabang", "address": "Jl. Merdeka No. 10",
+            "active": True,
+            "ticker_text": "Selamat datang di Kantor Cabang. Mohon menunggu nomor antrian Anda dipanggil. Terima kasih.",
+            "promo_media": [
+                {"type": "image", "url": "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600"},
+                {"type": "image", "url": "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600"},
+            ],
+            "created_at": base,
+        }
+        await db.branches.insert_one({**branch2})
+        await db.services.insert_many([
+            {"id": str(uuid.uuid4()), "name": "Teller", "prefix": "A", "description": "Setor, tarik tunai & transaksi umum", "icon": "banknote", "active": True, "branch_id": branch2["id"], "created_at": base},
+            {"id": str(uuid.uuid4()), "name": "Customer Service", "prefix": "B", "description": "Informasi & layanan pelanggan", "icon": "users", "active": True, "branch_id": branch2["id"], "created_at": base + "a"},
+        ])
+        await db.counters.insert_many([
+            {"id": str(uuid.uuid4()), "name": "Loket 1", "service_ids": [], "active": True, "branch_id": branch2["id"], "created_at": base},
+            {"id": str(uuid.uuid4()), "name": "Loket 2", "service_ids": [], "active": True, "branch_id": branch2["id"], "created_at": base + "a"},
+        ])
+        for email, name, bid in [
+            ("operator.pusat@antrian.id", "Operator Pusat", first_branch["id"]),
+            ("operator.cabang@antrian.id", "Operator Cabang", branch2["id"]),
+        ]:
+            if await db.users.find_one({"email": email}) is None:
+                await db.users.insert_one({
+                    "id": str(uuid.uuid4()), "email": email, "name": name,
+                    "password_hash": hash_password("operator123"),
+                    "role": "operator", "branch_id": bid, "created_at": now_iso(),
+                })
+        await db.meta.insert_one({"key": "seed_v2_done", "at": now_iso()})
+
+    await db.settings.update_one({"id": "main", "primary_color": {"$exists": False}}, {"$set": {"primary_color": "#4f46e5", "logo_url": ""}})
+
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
     await db.tickets.create_index([("date", 1), ("status", 1), ("branch_id", 1)])
     await db.tickets.create_index("id")
+    await db.call_logs.create_index([("date", 1), ("branch_id", 1)])
 
 
 @app.on_event("startup")

@@ -30,7 +30,7 @@ export const BranchPicker = ({ title = "Pilih Kantor Cabang", subtitle, onSelect
           <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-5">
             {branches === null && (
               <div className="col-span-full flex justify-center py-10">
-                <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
               </div>
             )}
             {branches && branches.length === 0 && (
@@ -41,13 +41,13 @@ export const BranchPicker = ({ title = "Pilih Kantor Cabang", subtitle, onSelect
                 key={b.id}
                 onClick={() => onSelect(b)}
                 data-testid={`branch-pick-${b.id}`}
-                className="group text-left bg-white border-2 border-slate-200 rounded-3xl p-7 shadow-sm hover:border-indigo-600 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] transition-[transform,border-color,box-shadow] duration-200"
+                className="group text-left bg-white border-2 border-slate-200 rounded-3xl p-7 shadow-sm hover:border-primary hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] transition-[transform,border-color,box-shadow] duration-200"
               >
                 <div className="flex items-center justify-between">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center">
                     <Building2 className="w-6 h-6 text-white" />
                   </div>
-                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-[color,transform] duration-200" />
+                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-primary group-hover:translate-x-1 transition-[color,transform] duration-200" />
                 </div>
                 <h2 className="mt-4 text-xl font-bold text-slate-900">{b.name}</h2>
                 {b.address && (

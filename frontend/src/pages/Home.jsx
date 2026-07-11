@@ -10,7 +10,7 @@ const surfaces = [
     icon: Ticket,
     title: "Ambil Antrian",
     desc: "Kiosk layar sentuh untuk pengunjung mengambil nomor antrian",
-    color: "bg-indigo-600",
+    color: "bg-primary",
     testId: "home-kiosk-link",
   },
   {
@@ -48,15 +48,19 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-50 relative overflow-hidden" data-testid="home-page">
-      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-indigo-100 blur-3xl opacity-70" />
+      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-primary/20 blur-3xl opacity-70" />
       <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full bg-amber-100 blur-3xl opacity-70" />
 
       <div className="relative max-w-6xl mx-auto px-6 py-16 sm:py-24">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center">
-              <Waves className="w-6 h-6 text-white" />
-            </div>
+            {settings.logo_url ? (
+              <img src={settings.logo_url} alt="Logo" className="w-12 h-12 rounded-2xl object-contain bg-white border border-slate-200 p-1" data-testid="home-logo" />
+            ) : (
+              <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center">
+                <Waves className="w-6 h-6 text-white" />
+              </div>
+            )}
             <span className="text-xs font-bold uppercase tracking-[0.25em] text-slate-500">Sistem Antrian Digital</span>
           </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 max-w-3xl">
@@ -85,7 +89,7 @@ export default function Home() {
                 </div>
                 <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 flex items-center gap-2">
                   {s.title}
-                  <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-[color,transform] duration-300" />
+                  <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-primary group-hover:translate-x-1 transition-[color,transform] duration-300" />
                 </h2>
                 <p className="mt-2 text-sm sm:text-base text-slate-500">{s.desc}</p>
               </Link>

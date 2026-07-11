@@ -67,7 +67,7 @@ export default function Kiosk() {
           {settings.branch_name && (
             <button
               onClick={() => { localStorage.removeItem("kiosk_branch"); setBranchId(""); setState(null); }}
-              className="text-xs font-bold px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+              className="text-xs font-bold px-3 py-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
               data-testid="kiosk-branch-badge"
               title="Klik untuk ganti cabang"
             >
@@ -104,13 +104,13 @@ export default function Kiosk() {
                       onClick={() => takeTicket(s.id)}
                       disabled={busy}
                       data-testid={`kiosk-service-${s.prefix}`}
-                      className="group text-left bg-white border-2 border-slate-200 rounded-3xl p-8 min-h-[140px] shadow-sm hover:border-indigo-600 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] transition-[transform,border-color,box-shadow] duration-200"
+                      className="group text-left bg-white border-2 border-slate-200 rounded-3xl p-8 min-h-[140px] shadow-sm hover:border-primary hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] transition-[transform,border-color,box-shadow] duration-200"
                     >
                       <div className="flex items-start justify-between">
-                        <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center">
+                        <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center">
                           <Icon className="w-7 h-7 text-white" />
                         </div>
-                        <span className="text-4xl font-black text-slate-100 group-hover:text-indigo-100 transition-colors tabular-nums">{s.prefix}</span>
+                        <span className="text-4xl font-black text-slate-100 group-hover:text-primary/40 transition-colors tabular-nums">{s.prefix}</span>
                       </div>
                       <h2 className="mt-5 text-2xl font-bold text-slate-900">{s.name}</h2>
                       <p className="mt-1 text-sm text-slate-500">{s.description}</p>
@@ -133,14 +133,14 @@ export default function Kiosk() {
               data-testid="kiosk-ticket-result"
             >
               <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
-                <div className="bg-indigo-600 px-8 py-6 text-center">
-                  <p className="text-xs font-bold uppercase tracking-[0.3em] text-indigo-200">Nomor Antrian Anda</p>
+                <div className="bg-primary px-8 py-6 text-center">
+                  <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/70">Nomor Antrian Anda</p>
                 </div>
                 <div className="px-8 py-10 text-center border-b-2 border-dashed border-slate-200">
                   <p className="text-7xl sm:text-8xl font-black tracking-tighter text-slate-900 tabular-nums" data-testid="kiosk-ticket-code">
                     {ticket.code}
                   </p>
-                  <p className="mt-4 text-lg font-semibold text-indigo-600">{ticket.service_name}</p>
+                  <p className="mt-4 text-lg font-semibold text-primary">{ticket.service_name}</p>
                 </div>
                 <div className="px-8 py-6 flex items-center justify-between text-sm text-slate-500">
                   <span className="inline-flex items-center gap-2">

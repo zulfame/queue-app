@@ -170,16 +170,20 @@ export default function Monitor() {
           <Link to="/" className="text-slate-300 hover:text-slate-600 transition-colors" data-testid="monitor-back-link">
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <div className="w-11 h-11 rounded-2xl bg-indigo-600 flex items-center justify-center">
-            <Waves className="w-6 h-6 text-white" />
-          </div>
+          {settings.logo_url ? (
+            <img src={settings.logo_url} alt="Logo" className="w-11 h-11 rounded-2xl object-contain bg-white border border-slate-200 p-0.5" data-testid="monitor-logo" />
+          ) : (
+            <div className="w-11 h-11 rounded-2xl bg-primary flex items-center justify-center">
+              <Waves className="w-6 h-6 text-white" />
+            </div>
+          )}
           <div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
               {settings.org_name}
               {settings.branch_name && (
                 <button
                   onClick={() => { localStorage.removeItem("monitor_branch"); setBranchId(""); setState(null); }}
-                  className="text-xs font-bold px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors tracking-normal"
+                  className="text-xs font-bold px-3 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors tracking-normal"
                   data-testid="monitor-branch-badge"
                   title="Klik untuk ganti cabang"
                 >
@@ -218,10 +222,10 @@ export default function Monitor() {
         <div className="md:col-span-7 flex flex-col gap-6 min-h-0">
           <div className="relative w-full aspect-video rounded-3xl overflow-hidden bg-white border border-slate-200 shadow-sm shrink-0" data-testid="monitor-promo-panel">
           {promos.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-600 to-indigo-800 text-white">
-              <Megaphone className="w-14 h-14 text-indigo-300 mb-4" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-primary to-primary text-white">
+              <Megaphone className="w-14 h-14 text-white/60 mb-4" />
               <p className="text-2xl font-bold">{settings.org_name}</p>
-              <p className="text-sm text-indigo-200 mt-1">Tambahkan media promosi melalui Admin Dashboard</p>
+              <p className="text-sm text-white/70 mt-1">Tambahkan media promosi melalui Admin Dashboard</p>
             </div>
           ) : (
             <>
@@ -267,20 +271,20 @@ export default function Monitor() {
                     transition={isActive ? { duration: 1.2, repeat: Infinity } : { duration: 0.2 }}
                     className={`rounded-2xl px-4 py-4 text-center border shadow-sm ${
                       isActive
-                        ? "bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-600/25"
+                        ? "bg-primary border-primary shadow-lg shadow-primary/25"
                         : t
                         ? "bg-white border-slate-200"
                         : "bg-slate-50 border-slate-200 border-dashed"
                     }`}
                     data-testid={`monitor-counter-card-${c.name.replace(/\s/g, "-")}`}
                   >
-                    <p className={`text-[11px] font-bold uppercase tracking-[0.2em] ${isActive ? "text-indigo-200" : "text-slate-400"}`}>{c.name}</p>
+                    <p className={`text-[11px] font-bold uppercase tracking-[0.2em] ${isActive ? "text-white/70" : "text-slate-400"}`}>{c.name}</p>
                     <p className={`mt-1.5 text-3xl lg:text-4xl font-black tabular-nums tracking-tight ${
                       isActive ? "text-amber-300" : t ? "text-slate-900" : "text-slate-300"
                     }`}>
                       {t ? t.code : "—"}
                     </p>
-                    <p className={`mt-1 text-[11px] font-semibold truncate ${isActive ? "text-white" : t ? "text-indigo-600" : "text-slate-400"}`}>
+                    <p className={`mt-1 text-[11px] font-semibold truncate ${isActive ? "text-white" : t ? "text-primary" : "text-slate-400"}`}>
                       {t ? t.service_name : "Tersedia"}
                     </p>
                   </motion.div>
@@ -291,10 +295,10 @@ export default function Monitor() {
         </div>
 
         <div className="md:col-span-5 flex flex-col gap-6 min-h-0">
-          <div className="bg-indigo-600 rounded-3xl px-8 py-8 text-center shadow-lg shadow-indigo-600/20 relative overflow-hidden shrink-0">
+          <div className="bg-primary rounded-3xl px-8 py-8 text-center shadow-lg shadow-primary/20 relative overflow-hidden shrink-0">
             <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-white/10" />
             <div className="absolute -bottom-20 -left-10 w-56 h-56 rounded-full bg-white/5" />
-            <p className="text-xs font-bold uppercase tracking-[0.4em] text-indigo-200">Nomor Antrian</p>
+            <p className="text-xs font-bold uppercase tracking-[0.4em] text-white/70">Nomor Antrian</p>
             <AnimatePresence mode="wait">
               <motion.p
                 key={current ? current.id : "none"}
@@ -308,7 +312,7 @@ export default function Monitor() {
                 {current ? current.code : "—"}
               </motion.p>
             </AnimatePresence>
-            <p className="text-sm text-indigo-200 font-medium">{current ? current.service_name : "Menunggu panggilan"}</p>
+            <p className="text-sm text-white/70 font-medium">{current ? current.service_name : "Menunggu panggilan"}</p>
             <p className="mt-1 text-3xl lg:text-4xl font-bold text-white" data-testid="monitor-current-counter">
               {current ? current.counter_name : ""}
             </p>
@@ -330,10 +334,10 @@ export default function Monitor() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05 }}
                   className={`flex items-center justify-between rounded-xl px-4 py-2.5 border ${
-                    i === 0 ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-100"
+                    i === 0 ? "bg-primary/10 border-primary/30" : "bg-slate-50 border-slate-100"
                   }`}
                 >
-                  <span className={`text-xl font-black tabular-nums ${i === 0 ? "text-indigo-700" : "text-slate-700"}`}>{t.code}</span>
+                  <span className={`text-xl font-black tabular-nums ${i === 0 ? "text-primary" : "text-slate-700"}`}>{t.code}</span>
                   <span className="text-xs font-semibold text-slate-400 text-right">{t.service_name}</span>
                 </motion.div>
               ))}
@@ -345,7 +349,7 @@ export default function Monitor() {
         </div>
       </main>
 
-      <footer className="bg-indigo-600 py-3 shrink-0">
+      <footer className="bg-primary py-3 shrink-0">
         <Marquee gradient={false} speed={45}>
           <span className="text-sm sm:text-base font-medium text-white tracking-wide px-8">
             {settings.ticker_text || "Selamat datang di sistem antrian digital."}

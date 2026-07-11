@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, LayoutDashboard, ListTree, DoorOpen, Settings2,
   Users, Clock, CheckCircle2, SkipForward, Trash2, Pencil, Plus, RefreshCw,
-  Building2, MapPin,
+  Building2, MapPin, UserCog, History,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -13,6 +13,7 @@ import { Switch } from "../components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { api, formatApiErrorDetail } from "../lib/api";
+import { applyBranding } from "../lib/branding";
 import { useAuth } from "../context/AuthContext";
 import { useQueueSocket } from "../hooks/useQueueSocket";
 
@@ -23,12 +24,25 @@ const TABS = [
   { id: "branches", label: "Cabang", icon: Building2 },
   { id: "services", label: "Layanan", icon: ListTree },
   { id: "counters", label: "Loket", icon: DoorOpen },
+  { id: "users", label: "Pengguna", icon: UserCog },
+  { id: "recap", label: "Rekap", icon: History },
   { id: "settings", label: "Pengaturan", icon: Settings2 },
 ];
 
 const emptyService = { name: "", prefix: "", description: "", icon: "users", active: true };
 const emptyCounter = { name: "", service_ids: [], active: true };
 const emptyBranch = { name: "", address: "", active: true };
+const emptyUser = { name: "", email: "", password: "", role: "operator", branch_id: "" };
+
+const ACTION_LABELS = {
+  call: { label: "Panggil", cls: "bg-primary/10 text-primary" },
+  recall: { label: "Panggil Ulang", cls: "bg-sky-50 text-sky-600" },
+  skip: { label: "Lewati", cls: "bg-rose-50 text-rose-600" },
+  complete: { label: "Selesai", cls: "bg-emerald-50 text-emerald-600" },
+  restore: { label: "Prioritaskan", cls: "bg-amber-50 text-amber-600" },
+};
+
+const todayInput = () => new Date().toISOString().slice(0, 10);
 
 export default function Admin() {
   const { logout } = useAuth();
@@ -44,6 +58,10 @@ export default function Admin() {
   const [svcForm, setSvcForm] = useState(null);
   const [ctrForm, setCtrForm] = useState(null);
   const [brForm, setBrForm] = useState(null);
+  const [usrForm, setUsrForm] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [recapLogs, setRecapLogs] = useState([]);
+  const [recapDate, setRecapDate] = useState(todayInput());
 
   const load = useCallback(async () => {
     try {
@@ -53,20 +71,24 @@ export default function Admin() {
       if (!bid || !brs.find((b) => b.id === bid)) bid = brs[0]?.id || "";
       if (bid !== branchId) { setBranchId(bid); return; }
       if (!bid) return;
-      const [st, sv, ct, se, ov] = await Promise.all([
+      const [st, sv, ct, se, ov, us, rc] = await Promise.all([
         api.get(`/stats?branch_id=${bid}`),
         api.get(`/services?branch_id=${bid}`),
         api.get(`/counters?branch_id=${bid}`),
         api.get("/settings"),
         api.get("/stats/overview"),
+        api.get("/users"),
+        api.get(`/recap?branch_id=${bid}&date=${recapDate}`),
       ]);
       setStats(st.data);
       setServices(sv.data);
       setCounters(ct.data);
       setSettings(se.data);
       setOverview(ov.data.branches);
+      setUsers(us.data);
+      setRecapLogs(rc.data.logs);
     } catch {}
-  }, [branchId]);
+  }, [branchId, recapDate]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (branchId) localStorage.setItem("admin_branch", branchId); }, [branchId]);
@@ -116,9 +138,21 @@ export default function Admin() {
     } catch (err) { handleErr(err); }
   };
 
+  const saveUser = async () => {
+    try {
+      const body = { ...usrForm, branch_id: usrForm.role === "operator" ? (usrForm.branch_id || branchId) : null };
+      if (usrForm.id) await api.put(`/users/${usrForm.id}`, body);
+      else await api.post("/users", body);
+      toast.success("Pengguna disimpan");
+      setUsrForm(null);
+      load();
+    } catch (err) { handleErr(err); }
+  };
+
   const saveSettings = async () => {
     try {
       await api.put("/settings", settings);
+      applyBranding(settings);
       toast.success("Pengaturan umum disimpan");
     } catch (err) { handleErr(err); }
   };
@@ -161,7 +195,7 @@ export default function Admin() {
   );
 
   const statCards = stats ? [
-    { label: "Total Hari Ini", value: stats.total, icon: Users, color: "text-indigo-600 bg-indigo-50" },
+    { label: "Total Hari Ini", value: stats.total, icon: Users, color: "text-primary bg-primary/10" },
     { label: "Menunggu", value: stats.waiting, icon: Clock, color: "text-amber-600 bg-amber-50" },
     { label: "Selesai", value: stats.done, icon: CheckCircle2, color: "text-emerald-600 bg-emerald-50" },
     { label: "Dilewati", value: stats.skipped, icon: SkipForward, color: "text-rose-600 bg-rose-50" },
@@ -179,7 +213,7 @@ export default function Admin() {
             onClick={() => setTab(t.id)}
             data-testid={`admin-tab-${t.id}`}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${
-              tab === t.id ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
+              tab === t.id ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100"
             }`}
           >
             <t.icon className="w-4 h-4" /> {t.label}
@@ -217,12 +251,12 @@ export default function Admin() {
               <div className="mt-8 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Per Layanan</h2>
-                  <span className="text-sm font-semibold text-slate-500">Rata-rata tunggu: <span className="text-indigo-600 font-bold">{stats.avg_wait_min} menit</span></span>
+                  <span className="text-sm font-semibold text-slate-500">Rata-rata tunggu: <span className="text-primary font-bold">{stats.avg_wait_min} menit</span></span>
                 </div>
                 <div className="space-y-4">
                   {stats.per_service.map((s) => (
                     <div key={s.prefix} className="flex items-center gap-4">
-                      <span className="w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm font-black flex items-center justify-center">{s.prefix}</span>
+                      <span className="w-8 h-8 rounded-lg bg-primary text-white text-sm font-black flex items-center justify-center">{s.prefix}</span>
                       <span className="flex-1 font-semibold text-slate-700">{s.name}</span>
                       <span className="text-sm text-slate-500 tabular-nums">{s.waiting} menunggu</span>
                       <span className="text-sm text-emerald-600 font-semibold tabular-nums">{s.done} selesai</span>
@@ -237,7 +271,7 @@ export default function Admin() {
                 <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500 mb-6">Ringkasan Semua Cabang — Hari Ini</h2>
                 <div className="space-y-4">
                   {overview.map((b) => (
-                    <div key={b.id} className={`flex items-center gap-4 rounded-xl px-4 py-3 ${b.id === branchId ? "bg-indigo-50" : ""}`}>
+                    <div key={b.id} className={`flex items-center gap-4 rounded-xl px-4 py-3 ${b.id === branchId ? "bg-primary/10" : ""}`}>
                       <span className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center"><Building2 className="w-4 h-4" /></span>
                       <span className="flex-1 font-semibold text-slate-700">{b.name}</span>
                       <span className="text-sm text-amber-600 font-semibold tabular-nums">{b.waiting} menunggu</span>
@@ -255,14 +289,14 @@ export default function Admin() {
           <div data-testid="admin-branches">
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Kantor Cabang</h1>
-              <Button onClick={() => setBrForm({ ...emptyBranch })} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold" data-testid="admin-add-branch-button">
+              <Button onClick={() => setBrForm({ ...emptyBranch })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-branch-button">
                 <Plus className="w-4 h-4 mr-2" /> Tambah Cabang
               </Button>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
               {branches.map((b) => (
                 <div key={b.id} className="flex items-center gap-4 px-6 py-4">
-                  <span className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center"><Building2 className="w-5 h-5" /></span>
+                  <span className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center"><Building2 className="w-5 h-5" /></span>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-slate-900">{b.name}</p>
                     {b.address && (
@@ -272,7 +306,7 @@ export default function Admin() {
                   <span className={`text-xs font-bold px-3 py-1 rounded-full ${b.active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}`}>
                     {b.active ? "Aktif" : "Nonaktif"}
                   </span>
-                  <button onClick={() => setBrForm({ id: b.id, name: b.name, address: b.address || "", active: b.active })} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors" data-testid={`admin-edit-branch-${b.id}`}>
+                  <button onClick={() => setBrForm({ id: b.id, name: b.name, address: b.address || "", active: b.active })} className="p-2 text-slate-400 hover:text-primary transition-colors" data-testid={`admin-edit-branch-${b.id}`}>
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
@@ -298,7 +332,7 @@ export default function Admin() {
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Layanan</h1>
               <div className="flex items-center gap-3">
                 {branchSelect}
-                <Button onClick={() => setSvcForm({ ...emptyService })} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold" data-testid="admin-add-service-button">
+                <Button onClick={() => setSvcForm({ ...emptyService })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-service-button">
                   <Plus className="w-4 h-4 mr-2" /> Tambah Layanan
                 </Button>
               </div>
@@ -306,7 +340,7 @@ export default function Admin() {
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
               {services.map((s) => (
                 <div key={s.id} className="flex items-center gap-4 px-6 py-4">
-                  <span className="w-10 h-10 rounded-xl bg-indigo-600 text-white font-black flex items-center justify-center">{s.prefix}</span>
+                  <span className="w-10 h-10 rounded-xl bg-primary text-white font-black flex items-center justify-center">{s.prefix}</span>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-slate-900">{s.name}</p>
                     <p className="text-xs text-slate-400 truncate">{s.description}</p>
@@ -314,7 +348,7 @@ export default function Admin() {
                   <span className={`text-xs font-bold px-3 py-1 rounded-full ${s.active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}`}>
                     {s.active ? "Aktif" : "Nonaktif"}
                   </span>
-                  <button onClick={() => setSvcForm({ ...s })} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors" data-testid={`admin-edit-service-${s.prefix}`}>
+                  <button onClick={() => setSvcForm({ ...s })} className="p-2 text-slate-400 hover:text-primary transition-colors" data-testid={`admin-edit-service-${s.prefix}`}>
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
@@ -336,7 +370,7 @@ export default function Admin() {
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Loket</h1>
               <div className="flex items-center gap-3">
                 {branchSelect}
-                <Button onClick={() => setCtrForm({ ...emptyCounter })} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold" data-testid="admin-add-counter-button">
+                <Button onClick={() => setCtrForm({ ...emptyCounter })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-counter-button">
                   <Plus className="w-4 h-4 mr-2" /> Tambah Loket
                 </Button>
               </div>
@@ -354,7 +388,7 @@ export default function Admin() {
                   <span className={`text-xs font-bold px-3 py-1 rounded-full ${c.active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}`}>
                     {c.active ? "Aktif" : "Nonaktif"}
                   </span>
-                  <button onClick={() => setCtrForm({ ...c })} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors" data-testid={`admin-edit-counter-${c.name.replace(/\s/g, "-")}`}>
+                  <button onClick={() => setCtrForm({ ...c })} className="p-2 text-slate-400 hover:text-primary transition-colors" data-testid={`admin-edit-counter-${c.name.replace(/\s/g, "-")}`}>
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
@@ -366,6 +400,96 @@ export default function Admin() {
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {tab === "users" && (
+          <div data-testid="admin-users">
+            <div className="flex items-center justify-between mb-8">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Kelola Pengguna</h1>
+              <Button onClick={() => setUsrForm({ ...emptyUser })} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold" data-testid="admin-add-user-button">
+                <Plus className="w-4 h-4 mr-2" /> Tambah Pengguna
+              </Button>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm divide-y divide-slate-100">
+              {users.map((u) => (
+                <div key={u.id} className="flex items-center gap-4 px-6 py-4">
+                  <span className={`w-10 h-10 rounded-xl text-white flex items-center justify-center ${u.role === "admin" ? "bg-slate-900" : "bg-primary"}`}>
+                    <UserCog className="w-5 h-5" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900">{u.name || u.email}</p>
+                    <p className="text-xs text-slate-400 truncate">{u.email}</p>
+                  </div>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${u.role === "admin" ? "bg-slate-900 text-white" : "bg-primary/10 text-primary"}`}>
+                    {u.role === "admin" ? "Admin" : "Operator"}
+                  </span>
+                  {u.role === "operator" && (
+                    <span className="text-xs font-semibold text-slate-500 hidden sm:inline-flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5" />
+                      {branches.find((b) => b.id === u.branch_id)?.name || "Tanpa cabang"}
+                    </span>
+                  )}
+                  <button onClick={() => setUsrForm({ id: u.id, name: u.name || "", email: u.email, password: "", role: u.role, branch_id: u.branch_id || "" })} className="p-2 text-slate-400 hover:text-primary transition-colors" data-testid={`admin-edit-user-${u.email}`}>
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (window.confirm(`Hapus pengguna ${u.name || u.email}?`)) {
+                        try { await api.delete(`/users/${u.id}`); toast.success("Pengguna dihapus"); load(); } catch (err) { handleErr(err); }
+                      }
+                    }}
+                    className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
+                    data-testid={`admin-delete-user-${u.email}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === "recap" && (
+          <div data-testid="admin-recap">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Rekap Pemanggilan</h1>
+              <div className="flex items-center gap-3">
+                {branchSelect}
+                <Input
+                  type="date"
+                  value={recapDate}
+                  onChange={(e) => setRecapDate(e.target.value)}
+                  className="w-44 h-10 rounded-xl bg-white"
+                  data-testid="admin-recap-date"
+                />
+              </div>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+              <div className="grid grid-cols-[80px_90px_1fr_1fr_1fr_110px] gap-3 px-6 py-3 bg-slate-50 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                <span>Waktu</span><span>Tiket</span><span>Layanan</span><span>Loket</span><span>Petugas</span><span>Aksi</span>
+              </div>
+              <div className="divide-y divide-slate-100" data-testid="admin-recap-list">
+                {recapLogs.length === 0 && (
+                  <p className="px-6 py-8 text-sm text-slate-400">Belum ada pemanggilan pada tanggal ini</p>
+                )}
+                {recapLogs.map((l) => {
+                  const a = ACTION_LABELS[l.action] || { label: l.action, cls: "bg-slate-100 text-slate-500" };
+                  return (
+                    <div key={l.id} className="grid grid-cols-[80px_90px_1fr_1fr_1fr_110px] gap-3 px-6 py-3.5 items-center text-sm">
+                      <span className="tabular-nums text-slate-500 font-medium">
+                        {new Date(l.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                      <span className="font-black tabular-nums text-slate-900">{l.ticket_code}</span>
+                      <span className="text-slate-600 font-medium truncate">{l.service_name}</span>
+                      <span className="text-slate-600 font-medium truncate">{l.counter_name || "—"}</span>
+                      <span className="text-slate-900 font-semibold truncate">{l.operator_name}</span>
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full text-center ${a.cls}`}>{a.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -383,7 +507,34 @@ export default function Admin() {
                 <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Tagline</Label>
                 <Input value={settings.tagline} onChange={(e) => setSettings({ ...settings, tagline: e.target.value })} className="h-12 rounded-xl" data-testid="admin-settings-tagline" />
               </div>
-              <Button onClick={saveSettings} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold h-12 px-8" data-testid="admin-settings-save-button">
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Warna Primary</Label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={settings.primary_color || "#4f46e5"}
+                    onChange={(e) => setSettings({ ...settings, primary_color: e.target.value })}
+                    className="w-12 h-12 rounded-xl border border-slate-200 cursor-pointer bg-white p-1"
+                    data-testid="admin-settings-primary-color"
+                  />
+                  <Input
+                    value={settings.primary_color || ""}
+                    onChange={(e) => setSettings({ ...settings, primary_color: e.target.value })}
+                    placeholder="#4f46e5"
+                    className="h-12 rounded-xl w-36 font-mono"
+                    data-testid="admin-settings-primary-color-text"
+                  />
+                  <span className="text-xs text-slate-400">Warna utama tombol & aksen di semua halaman</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">URL Logo</Label>
+                <div className="flex items-center gap-3">
+                  {settings.logo_url && <img src={settings.logo_url} alt="Logo" className="w-12 h-12 rounded-xl object-contain border border-slate-200 bg-white p-1" />}
+                  <Input value={settings.logo_url || ""} onChange={(e) => setSettings({ ...settings, logo_url: e.target.value })} placeholder="https://... (kosongkan untuk ikon default)" className="h-12 rounded-xl flex-1" data-testid="admin-settings-logo-url" />
+                </div>
+              </div>
+              <Button onClick={saveSettings} className="rounded-xl bg-primary hover:bg-primary/90 font-semibold h-12 px-8" data-testid="admin-settings-save-button">
                 Simpan Pengaturan
               </Button>
             </div>
@@ -454,7 +605,7 @@ export default function Admin() {
                 </Button>
                 <Button
                   onClick={saveBranchCfg}
-                  className="rounded-xl bg-indigo-600 hover:bg-indigo-700 font-semibold"
+                  className="rounded-xl bg-primary hover:bg-primary/90 font-semibold"
                   data-testid="admin-branch-settings-save-button"
                 >
                   Simpan Pengaturan Cabang
@@ -464,6 +615,58 @@ export default function Admin() {
           </div>
         )}
       </main>
+
+      <Dialog open={!!usrForm} onOpenChange={(o) => !o && setUsrForm(null)}>
+        <DialogContent className="rounded-2xl" data-testid="admin-user-dialog">
+          <DialogHeader>
+            <DialogTitle>{usrForm?.id ? "Edit Pengguna" : "Tambah Pengguna"}</DialogTitle>
+          </DialogHeader>
+          {usrForm && (
+            <div className="space-y-4 mt-2">
+              <div className="space-y-2">
+                <Label>Nama</Label>
+                <Input value={usrForm.name} onChange={(e) => setUsrForm({ ...usrForm, name: e.target.value })} placeholder="cth: Budi Santoso" data-testid="admin-user-name-input" />
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input type="email" value={usrForm.email} onChange={(e) => setUsrForm({ ...usrForm, email: e.target.value })} placeholder="operator@antrian.id" data-testid="admin-user-email-input" />
+              </div>
+              <div className="space-y-2">
+                <Label>{usrForm.id ? "Password Baru (kosongkan jika tidak diubah)" : "Password"}</Label>
+                <Input type="password" value={usrForm.password} onChange={(e) => setUsrForm({ ...usrForm, password: e.target.value })} placeholder="min. 6 karakter" data-testid="admin-user-password-input" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Peran</Label>
+                  <Select value={usrForm.role} onValueChange={(v) => setUsrForm({ ...usrForm, role: v })}>
+                    <SelectTrigger data-testid="admin-user-role-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="operator">Operator</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {usrForm.role === "operator" && (
+                  <div className="space-y-2">
+                    <Label>Penempatan Antrian</Label>
+                    <Select value={usrForm.branch_id || ""} onValueChange={(v) => setUsrForm({ ...usrForm, branch_id: v })}>
+                      <SelectTrigger data-testid="admin-user-branch-select"><SelectValue placeholder="Pilih cabang" /></SelectTrigger>
+                      <SelectContent>
+                        {branches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+              <Button onClick={saveUser} disabled={!usrForm.name || !usrForm.email || (!usrForm.id && !usrForm.password)} className="w-full rounded-xl bg-primary hover:bg-primary/90 h-11 font-semibold" data-testid="admin-user-save-button">
+                Simpan
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!brForm} onOpenChange={(o) => !o && setBrForm(null)}>
         <DialogContent className="rounded-2xl" data-testid="admin-branch-dialog">
@@ -484,7 +687,7 @@ export default function Admin() {
                 <Switch checked={brForm.active} onCheckedChange={(v) => setBrForm({ ...brForm, active: v })} data-testid="admin-branch-active-switch" />
                 <Label>Aktif</Label>
               </div>
-              <Button onClick={saveBranch} disabled={!brForm.name} className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 h-11 font-semibold" data-testid="admin-branch-save-button">
+              <Button onClick={saveBranch} disabled={!brForm.name} className="w-full rounded-xl bg-primary hover:bg-primary/90 h-11 font-semibold" data-testid="admin-branch-save-button">
                 Simpan
               </Button>
             </div>
@@ -526,7 +729,7 @@ export default function Admin() {
                 <Switch checked={svcForm.active} onCheckedChange={(v) => setSvcForm({ ...svcForm, active: v })} data-testid="admin-service-active-switch" />
                 <Label>Aktif</Label>
               </div>
-              <Button onClick={saveService} disabled={!svcForm.name || !svcForm.prefix} className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 h-11 font-semibold" data-testid="admin-service-save-button">
+              <Button onClick={saveService} disabled={!svcForm.name || !svcForm.prefix} className="w-full rounded-xl bg-primary hover:bg-primary/90 h-11 font-semibold" data-testid="admin-service-save-button">
                 Simpan
               </Button>
             </div>
@@ -549,7 +752,7 @@ export default function Admin() {
                 <Switch checked={ctrForm.active} onCheckedChange={(v) => setCtrForm({ ...ctrForm, active: v })} data-testid="admin-counter-active-switch" />
                 <Label>Aktif</Label>
               </div>
-              <Button onClick={saveCounter} disabled={!ctrForm.name} className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 h-11 font-semibold" data-testid="admin-counter-save-button">
+              <Button onClick={saveCounter} disabled={!ctrForm.name} className="w-full rounded-xl bg-primary hover:bg-primary/90 h-11 font-semibold" data-testid="admin-counter-save-button">
                 Simpan
               </Button>
             </div>

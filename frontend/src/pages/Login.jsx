@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Waves, ArrowLeft } from "lucide-react";
@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { useAuth } from "../context/AuthContext";
-import { formatApiErrorDetail } from "../lib/api";
+import { api, formatApiErrorDetail } from "../lib/api";
 
 export default function Login() {
   const { login } = useAuth();
@@ -15,6 +15,11 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [logoUrl, setLogoUrl] = useState("");
+
+  useEffect(() => {
+    api.get("/settings").then(({ data }) => setLogoUrl(data.logo_url || "")).catch(() => {});
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -50,9 +55,13 @@ export default function Login() {
         <Link to="/" className="inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white mb-8 transition-colors" data-testid="login-back-link">
           <ArrowLeft className="w-4 h-4" /> Kembali ke Beranda
         </Link>
-        <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center mb-6">
-          <Waves className="w-7 h-7 text-white" />
-        </div>
+        {logoUrl ? (
+          <img src={logoUrl} alt="Logo" className="w-14 h-14 rounded-2xl object-contain bg-white p-1 mb-6" data-testid="login-logo" />
+        ) : (
+          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center mb-6">
+            <Waves className="w-7 h-7 text-white" />
+          </div>
+        )}
         <h1 className="text-2xl sm:text-3xl font-bold text-white">Masuk Petugas</h1>
         <p className="mt-2 text-sm text-slate-400">Akses panel operator & admin dashboard</p>
 
@@ -89,7 +98,7 @@ export default function Login() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full h-12 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-base"
+            className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold text-base"
             data-testid="login-submit-button"
           >
             {loading ? "Memproses..." : "Masuk"}

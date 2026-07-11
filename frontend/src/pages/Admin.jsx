@@ -380,7 +380,7 @@ export default function Admin() {
           </div>
         </header>
 
-        <main className="flex-1 p-6 lg:p-10 max-w-6xl w-full">
+        <main className="flex-1 p-6 lg:p-10 w-full">
         {tab === "dashboard" && (
           <div data-testid="admin-dashboard">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
@@ -686,7 +686,7 @@ export default function Admin() {
         )}
 
         {tab === "database" && (
-          <div data-testid="admin-database" className="max-w-3xl">
+          <div data-testid="admin-database">
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8">Database</h1>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
@@ -715,7 +715,7 @@ export default function Admin() {
         )}
 
         {tab === "printers" && (
-          <div data-testid="admin-printers" className="max-w-5xl">
+          <div data-testid="admin-printers">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Printers</h1>
               {branchSelect}
@@ -760,7 +760,7 @@ export default function Admin() {
         )}
 
         {tab === "settings" && (
-          <div data-testid="admin-settings" className="max-w-6xl">
+          <div data-testid="admin-settings">
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8">Pengaturan Aplikasi</h1>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
             <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6">

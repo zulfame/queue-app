@@ -1,0 +1,121 @@
+{
+  "theme": "Smart Multi-Surface Theme: Admin & Operator Panels use clean Light Mode for high legibility in bright offices. Kiosk uses High-Contrast Light Mode with Brand Colors. TV Monitor Display MUST use Dark Mode (Crystal Glassmorphism over deep blue abstract background) to reduce glare and make the glowing numbers pop.",
+  "typography": {
+    "font_family": "Poppins, sans-serif",
+    "setup": "MUST import Poppins via CSS: @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap'); and set as default sans font in tailwind config.",
+    "hierarchy": {
+      "TV_Monitor_Main_Number": "text-[15vw] sm:text-[20vw] font-black tracking-tighter leading-none tabular-nums text-white drop-shadow-2xl",
+      "TV_Monitor_Counter": "text-4xl sm:text-6xl font-bold tracking-tight text-amber-400",
+      "H1": "text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-foreground",
+      "H2": "text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight text-foreground",
+      "Kiosk_Button_Text": "text-2xl sm:text-4xl font-bold tracking-wide",
+      "Body": "text-base sm:text-lg font-medium text-muted-foreground",
+      "Labels": "text-xs sm:text-sm font-bold uppercase tracking-[0.2em] text-muted-foreground"
+    },
+    "rules": [
+      "Never use Inter or generic sans. Use Poppins exclusively as requested.",
+      "Always use 'tabular-nums' for queue numbers so they don't shift when changing.",
+      "Use extremely tight tracking on massive headings."
+    ]
+  },
+  "colors": {
+    "archetype": "Authority & Clarity (Swiss & High-Contrast tailored for Trust - Bank/Clinic)",
+    "palette": {
+      "primary": "Indigo-600 (Tailwind bg-indigo-600) for trustworthy actions.",
+      "primary_hover": "Indigo-700",
+      "accent": "Amber-500 (Tailwind text-amber-500) for the active 'Now Serving' highlight.",
+      "success": "Emerald-500 for completed statuses.",
+      "destructive": "Rose-500 for skipped/missed queues.",
+      "background_light": "Slate-50",
+      "surface_light": "White with subtle Slate-200 border",
+      "background_dark": "Slate-950",
+      "surface_dark_glass": "bg-black/40 backdrop-blur-2xl border border-white/10"
+    },
+    "rules": [
+      "NO Teal Green or Teal Blue for dashboards.",
+      "Never use pure transparent backgrounds over content; always use backdrop-blur + semi-transparent color.",
+      "Ensure 4.5:1 contrast ratio. Use Text Shadow on the TV Monitor over backgrounds."
+    ]
+  },
+  "visual_enhancers": {
+    "surfaces": [
+      "TV Monitor: The 'Crystal' Variant (Glassmorphism). bg-black/40 with backdrop-blur-2xl and 1px border-white/10.",
+      "Admin/Operator: The 'Tactile' Variant (Neumorphism-lite). Flat white cards, shadow-sm, border-slate-200.",
+      "Kiosk: Large solid blocks with rounded-3xl, prominent shadow-xl on active elements."
+    ],
+    "shadows": "Use layered shadows. TV Monitor numbers get heavy drop-shadow to pop off the screen."
+  },
+  "layouts": {
+    "tv_monitor": {
+      "type": "Asymmetrical Grid",
+      "classes": "min-h-screen flex flex-col overflow-hidden relative",
+      "structure": "Top: Header (Logo + Time). Middle: Grid (grid-cols-1 md:grid-cols-12 gap-8). Left 8 cols: 'Now Serving' Massive Card. Right 4 cols: 'Waiting List' vertical list. Bottom: react-fast-marquee Ticker."
+    },
+    "kiosk": {
+      "type": "Focused Centered or Simple Grid",
+      "classes": "min-h-screen flex flex-col items-center justify-center p-8",
+      "structure": "Giant touch targets (min-h-[120px]). Use bento grid (grid-cols-1 md:grid-cols-2 gap-8) for selecting Service (e.g., Teller, CS, Pharmacy)."
+    },
+    "admin_dashboard": {
+      "type": "High Density Grid",
+      "classes": "grid grid-cols-1 md:grid-cols-4 gap-6",
+      "structure": "Use exact spacing, dense cards for queue stats. Left sidebar for navigation."
+    },
+    "operator_panel": {
+      "type": "Action-Oriented Split",
+      "classes": "max-w-5xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-8",
+      "structure": "Col 1-2: Current Queue details. Col 3: Massive action buttons (Call Next, Recall, Complete)."
+    }
+  },
+  "components": {
+    "buttons": "Rounded-2xl or pill-shaped. Kiosk buttons must be massive (p-8 or p-10) to accommodate touch. Use hover:-translate-y-1 transition.",
+    "cards": "Shadcn standard but override radius to rounded-2xl or 3xl for kiosk and TV monitor.",
+    "tables": "Admin panel uses dense Shadcn tables. No card wrappers if possible, flat edges.",
+    "marquee": "Use react-fast-marquee for the informational ticker at the bottom of the TV display.",
+    "modals": "Use Shadcn Dialog for Kiosk 'Ticket Printed' confirmation with simulated paper receipt design."
+  },
+  "motion": {
+    "rules": [
+      "Use framer-motion for the TV Monitor 'Now Serving' number change. It MUST pulse or slide in dramatically to catch attention.",
+      "Operator panel buttons should have micro-interactions (scale 0.98 on tap).",
+      "Kiosk flow must use smooth crossfade transitions between steps.",
+      "DO NOT use generic 'transition-all'."
+    ]
+  },
+  "media": {
+    "images": [
+      {
+        "url": "https://images.unsplash.com/photo-1620121692029-d088224ddc74?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHw0fHxhYnN0cmFjdCUyMGJhY2tncm91bmQlMjBibHVlJTIwZ3JhZGllbnQlMjBtb2Rlcm58ZW58MHx8fHwxNzgzNzcxNjQ2fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Deep blue and purple flowing shapes abstract background",
+        "category": "TV Monitor Background (Full screen absolute cover under glassmorphism)"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1614850523011-8f49ffc73908?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGJhY2tncm91bmQlMjBibHVlJTIwZ3JhZGllbnQlMjBtb2Rlcm58ZW58MHx8fHwxNzgzNzcxNjQ2fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Dark blue abstract gradient",
+        "category": "Login Page Background"
+      }
+    ]
+  },
+  "accessibility": {
+    "guidelines": [
+      "Always add data-testid to interactive elements.",
+      "Kiosk contrast must be extremely high for visually impaired users.",
+      "TV monitor requires audio cues (TTS) to complement visual changes."
+    ]
+  },
+  "technical_instructions": [
+    "Install libraries: framer-motion, lucide-react, sonner, react-fast-marquee, recharts.",
+    "Implement Web Speech API (window.speechSynthesis) for the TV Monitor. Example text: 'Nomor antrian, A, satu, silakan menuju, loket, satu'. Ensure it uses 'id-ID' locale.",
+    "Setup a simulated WebSocket or SSE hook for real-time state sync between Operator Panel, TV Monitor, and Kiosk.",
+    "Kiosk sequence: Home -> Select Service -> Print Ticket Modal -> Auto return home.",
+    "Build Shadcn components: Button, Card, Dialog, Table, Input, Select, Badge."
+  ],
+  "universal_guidelines_for_main_agent": [
+    "You tend to converge toward generic outputs. Break the mold. Make the TV Monitor look like a high-end airport lounge display.",
+    "Do NOT center align the Admin app container.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Always use modern pill-shaped or rounded-2xl buttons with interaction animations.",
+    "Never use AI assistant Emoji characters for icons.",
+    "Use Sonner for toasts."
+  ]
+}

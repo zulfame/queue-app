@@ -67,14 +67,14 @@ export default function Login() {
 
         <form onSubmit={submit} className="mt-8 space-y-5">
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-slate-300 text-xs font-bold uppercase tracking-widest">Email</Label>
+            <Label htmlFor="email" className="text-slate-300 text-xs font-bold uppercase tracking-widest">Email atau Username</Label>
             <Input
               id="email"
-              type="email"
+              type="text"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@antrian.id"
+              placeholder="admin@antrian.id atau admin"
               className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 h-12 rounded-xl"
               data-testid="login-email-input"
             />

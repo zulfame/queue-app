@@ -213,9 +213,15 @@ class RestoreInput(BaseModel):
 class UserInput(BaseModel):
     name: str
     email: str
+    username: Optional[str] = ""
     password: Optional[str] = None
     role: str = "operator"
     branch_id: Optional[str] = None
+
+
+class ChangePasswordInput(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class TicketInput(BaseModel):
@@ -243,7 +249,7 @@ async def login(body: LoginInput, request: Request):
             raise HTTPException(status_code=429, detail="Terlalu banyak percobaan. Coba lagi dalam 15 menit.")
         await db.login_attempts.delete_one({"identifier": identifier})
 
-    user = await db.users.find_one({"email": email})
+    user = await db.users.find_one({"$or": [{"email": email}, {"username": email}]})
     if not user or not verify_password(body.password, user["password_hash"]):
         await db.login_attempts.update_one(
             {"identifier": identifier},
@@ -301,6 +307,18 @@ async def me(request: Request):
     return user
 
 
+@api_router.post("/auth/change-password")
+async def change_password(body: ChangePasswordInput, request: Request):
+    user = await get_current_user(request)
+    full = await db.users.find_one({"id": user["id"]})
+    if not verify_password(body.current_password, full["password_hash"]):
+        raise HTTPException(status_code=400, detail="Kata sandi saat ini salah")
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Kata sandi baru minimal 6 karakter")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(body.new_password)}})
+    return {"ok": True}
+
+
 # ---------- Users (kelola pengguna) ----------
 @api_router.get("/users")
 async def list_users(request: Request):
@@ -312,12 +330,15 @@ async def list_users(request: Request):
 async def create_user(body: UserInput, request: Request):
     await require_admin(request)
     email = body.email.strip().lower()
+    username = (body.username or "").strip().lower() or None
     if not body.password or len(body.password) < 6:
         raise HTTPException(status_code=400, detail="Password minimal 6 karakter")
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")
+    if username and await db.users.find_one({"$or": [{"username": username}, {"email": username}]}):
+        raise HTTPException(status_code=400, detail="Username sudah digunakan")
     doc = {
-        "id": str(uuid.uuid4()), "name": body.name, "email": email,
+        "id": str(uuid.uuid4()), "name": body.name, "email": email, "username": username,
         "password_hash": hash_password(body.password),
         "role": body.role if body.role in ("admin", "operator") else "operator",
         "branch_id": body.branch_id if body.role == "operator" else None,
@@ -338,8 +359,11 @@ async def update_user(user_id: str, body: UserInput, request: Request):
     dup = await db.users.find_one({"email": email, "id": {"$ne": user_id}})
     if dup:
         raise HTTPException(status_code=400, detail="Email sudah digunakan pengguna lain")
+    username = (body.username or "").strip().lower() or None
+    if username and await db.users.find_one({"$or": [{"username": username}, {"email": username}], "id": {"$ne": user_id}}):
+        raise HTTPException(status_code=400, detail="Username sudah digunakan pengguna lain")
     update = {
-        "name": body.name, "email": email,
+        "name": body.name, "email": email, "username": username,
         "role": body.role if body.role in ("admin", "operator") else "operator",
         "branch_id": body.branch_id if body.role == "operator" else None,
     }
@@ -833,6 +857,7 @@ async def seed():
         })
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
+    await db.users.update_one({"email": admin_email, "username": {"$exists": False}}, {"$set": {"username": "admin"}})
 
     if await db.services.count_documents({}) == 0:
         base = now_iso()

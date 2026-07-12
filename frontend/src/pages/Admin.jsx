@@ -5,7 +5,7 @@ import {
   ArrowLeft, LogOut, LayoutDashboard, ListTree, DoorOpen, Settings2,
   Users, Clock, CheckCircle2, SkipForward, Trash2, Pencil, Plus, RefreshCw,
   Building2, MapPin, UserCog, History, Database, Printer, Download, Upload,
-  FileSpreadsheet, Star, Camera, X, Waves, ExternalLink,
+  FileSpreadsheet, Star, Camera, X, Waves, ExternalLink, KeyRound,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -18,6 +18,7 @@ import { api, formatApiErrorDetail } from "../lib/api";
 import { applyBranding } from "../lib/branding";
 import { fileToDataUrl } from "../lib/image";
 import { usePagedSearch, SearchBox, Pager } from "../components/paged";
+import { ChangePasswordForm } from "../components/ChangePassword";
 import { useAuth } from "../context/AuthContext";
 import { useQueueSocket } from "../hooks/useQueueSocket";
 
@@ -37,6 +38,7 @@ const MENU = [
     type: "group", label: "Pengaturan", items: [
       { id: "settings", label: "Aplikasi", icon: Settings2 },
       { id: "users", label: "Pengguna", icon: UserCog },
+      { id: "security", label: "Keamanan", icon: KeyRound },
       { id: "database", label: "Database", icon: Database },
       { id: "printers", label: "Printers", icon: Printer },
     ],
@@ -46,7 +48,7 @@ const MENU = [
 const emptyService = { name: "", prefix: "", description: "", icon: "users", active: true };
 const emptyCounter = { name: "", service_ids: [], active: true };
 const emptyBranch = { name: "", address: "", active: true };
-const emptyUser = { name: "", email: "", password: "", role: "operator", branch_id: "" };
+const emptyUser = { name: "", email: "", username: "", password: "", role: "operator", branch_id: "" };
 
 const ACTION_LABELS = {
   call: { label: "Panggil", cls: "bg-primary/10 text-primary" },
@@ -587,7 +589,7 @@ export default function Admin() {
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-slate-900">{u.name || u.email}</p>
-                    <p className="text-xs text-slate-400 truncate">{u.email}</p>
+                    <p className="text-xs text-slate-400 truncate">{u.email}{u.username ? ` • @${u.username}` : ""}</p>
                   </div>
                   <span className={`text-xs font-bold px-3 py-1 rounded-full ${u.role === "admin" ? "bg-slate-900 text-white" : "bg-primary/10 text-primary"}`}>
                     {u.role === "admin" ? "Admin" : "Operator"}
@@ -598,7 +600,7 @@ export default function Admin() {
                       {branches.find((b) => b.id === u.branch_id)?.name || "Tanpa cabang"}
                     </span>
                   )}
-                  <button onClick={() => setUsrForm({ id: u.id, name: u.name || "", email: u.email, password: "", role: u.role, branch_id: u.branch_id || "" })} className="p-2 text-slate-400 hover:text-primary transition-colors" data-testid={`admin-edit-user-${u.email}`}>
+                  <button onClick={() => setUsrForm({ id: u.id, name: u.name || "", email: u.email, username: u.username || "", password: "", role: u.role, branch_id: u.branch_id || "" })} className="p-2 text-slate-400 hover:text-primary transition-colors" data-testid={`admin-edit-user-${u.email}`}>
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
@@ -680,6 +682,28 @@ export default function Admin() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "security" && (
+          <div data-testid="admin-security">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8">Keamanan</h1>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
+              <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+                <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500 mb-6">Ubah Kata Sandi</h2>
+                <ChangePasswordForm />
+              </div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+                <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500 mb-6">Akun Saya</h2>
+                <div className="space-y-4 text-sm">
+                  <div className="flex justify-between border-b border-slate-100 pb-3"><span className="text-slate-400 font-semibold">Nama</span><span className="font-semibold text-slate-900" data-testid="security-account-name">{user?.name || "-"}</span></div>
+                  <div className="flex justify-between border-b border-slate-100 pb-3"><span className="text-slate-400 font-semibold">Email</span><span className="font-semibold text-slate-900">{user?.email}</span></div>
+                  <div className="flex justify-between border-b border-slate-100 pb-3"><span className="text-slate-400 font-semibold">Username</span><span className="font-semibold text-slate-900">{user?.username || "-"}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400 font-semibold">Peran</span><span className="font-semibold text-slate-900">{user?.role === "admin" ? "Administrator" : "Operator"}</span></div>
+                </div>
+                <p className="mt-6 text-xs text-slate-400">Anda dapat login menggunakan email atau username beserta kata sandi.</p>
               </div>
             </div>
           </div>
@@ -944,9 +968,15 @@ export default function Admin() {
                 <Label>Nama</Label>
                 <Input value={usrForm.name} onChange={(e) => setUsrForm({ ...usrForm, name: e.target.value })} placeholder="cth: Budi Santoso" data-testid="admin-user-name-input" />
               </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input type="email" value={usrForm.email} onChange={(e) => setUsrForm({ ...usrForm, email: e.target.value })} placeholder="operator@antrian.id" data-testid="admin-user-email-input" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input type="email" value={usrForm.email} onChange={(e) => setUsrForm({ ...usrForm, email: e.target.value })} placeholder="operator@antrian.id" data-testid="admin-user-email-input" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Username (opsional)</Label>
+                  <Input value={usrForm.username} onChange={(e) => setUsrForm({ ...usrForm, username: e.target.value.toLowerCase().replace(/\s/g, "") })} placeholder="cth: budi01" data-testid="admin-user-username-input" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>{usrForm.id ? "Password Baru (kosongkan jika tidak diubah)" : "Password"}</Label>

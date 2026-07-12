@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { ArrowLeft, PhoneCall, RotateCcw, SkipForward, CheckCircle2, LogOut, Star, Undo2, Camera, X } from "lucide-react";
+import { ArrowLeft, PhoneCall, RotateCcw, SkipForward, CheckCircle2, LogOut, Star, Undo2, Camera, X, KeyRound } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
@@ -11,6 +11,7 @@ import { api, formatApiErrorDetail } from "../lib/api";
 import { fileToDataUrl } from "../lib/image";
 import { useQueueSocket } from "../hooks/useQueueSocket";
 import { useAuth } from "../context/AuthContext";
+import { ChangePasswordForm } from "../components/ChangePassword";
 
 export default function Operator() {
   const { user, logout } = useAuth();
@@ -22,6 +23,7 @@ export default function Operator() {
   const [serviceId, setServiceId] = useState(localStorage.getItem("op_service") || "");
   const [busy, setBusy] = useState(false);
   const [survey, setSurvey] = useState(null);
+  const [showPw, setShowPw] = useState(false);
 
   const load = useCallback(() => {
     if (!branchId) return;
@@ -130,9 +132,14 @@ export default function Operator() {
             </span>
           )}
         </div>
-        <button onClick={logout} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-rose-600 transition-colors" data-testid="operator-logout-button">
-          <LogOut className="w-4 h-4" /> Keluar
-        </button>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setShowPw(true)} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-primary transition-colors" data-testid="operator-change-password-button">
+            <KeyRound className="w-4 h-4" /> <span className="hidden sm:inline">Ubah Sandi</span>
+          </button>
+          <button onClick={logout} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-rose-600 transition-colors" data-testid="operator-logout-button">
+            <LogOut className="w-4 h-4" /> Keluar
+          </button>
+        </div>
       </header>
 
       <main className="max-w-5xl mx-auto p-6 space-y-8">
@@ -293,6 +300,17 @@ export default function Operator() {
           </div>
         )}
       </main>
+
+      <Dialog open={showPw} onOpenChange={setShowPw}>
+        <DialogContent className="rounded-2xl" data-testid="operator-change-password-dialog">
+          <DialogHeader>
+            <DialogTitle>Ubah Kata Sandi</DialogTitle>
+          </DialogHeader>
+          <div className="mt-2">
+            <ChangePasswordForm onSuccess={() => setShowPw(false)} />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!survey} onOpenChange={(o) => !o && setSurvey(null)}>
         <DialogContent className="rounded-2xl" data-testid="operator-survey-dialog">

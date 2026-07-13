@@ -57,3 +57,4 @@ Buatkan aplikasi antrian dengan fitur untuk backend, layar monitor, ambil antria
 - P2: Cetak tiket fisik (printer thermal) / QR tracking posisi antrian
 - P2: Pecah Admin.jsx (765 baris) menjadi komponen per-tab
 - P2: Validasi format hex primary_color di backend
+- 2026-06: Backup database dinamis: mencakup SEMUA koleksi di database (termasuk users + password_hash, login_attempts, dan koleksi baru apa pun ke depannya) tanpa daftar hardcoded; restore menerima semua koleksi valid. Verified round-trip: backup -> restore -> login tetap berfungsi.

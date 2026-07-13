@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 import os
+import re
 import uuid
 import json
 import logging
@@ -816,15 +817,17 @@ async def submit_survey(body: SurveyInput, request: Request):
 
 
 # ---------- Database backup & restore ----------
-BACKUP_COLLECTIONS = ["branches", "services", "counters", "tickets", "users", "settings", "call_logs", "sequences", "meta"]
+def _valid_collection_name(name: str) -> bool:
+    return bool(re.fullmatch(r"[a-zA-Z0-9_]+", name)) and not name.startswith("system")
 
 
 @api_router.get("/db/backup")
 async def db_backup(request: Request):
     await require_admin(request)
     from fastapi.responses import JSONResponse
-    dump = {"exported_at": now_iso(), "data": {}}
-    for c in BACKUP_COLLECTIONS:
+    dump = {"exported_at": now_iso(), "version": 2, "data": {}}
+    names = sorted(n for n in await db.list_collection_names() if _valid_collection_name(n))
+    for c in names:
         dump["data"][c] = await db[c].find({}, {"_id": 0}).to_list(100000)
     return JSONResponse(dump, headers={"Content-Disposition": f'attachment; filename="backup_{today_str()}.json"'})
 
@@ -834,7 +837,7 @@ async def db_restore(body: RestoreInput, request: Request):
     await require_admin(request)
     restored = {}
     for c, docs in body.data.items():
-        if c not in BACKUP_COLLECTIONS or not isinstance(docs, list):
+        if not _valid_collection_name(c) or not isinstance(docs, list):
             continue
         await db[c].delete_many({})
         if docs:

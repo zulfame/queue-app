@@ -19,9 +19,16 @@ from pymongo import ReturnDocument
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ.get('DB_NAME', 'test_database')]
+
+# Directory for any files that must persist (kept for future file-persistence needs).
+LOCAL_STORAGE_DIR = os.environ.get('LOCAL_STORAGE_DIR', '/app/data')
+try:
+    Path(LOCAL_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -33,7 +40,7 @@ JWT_ALGORITHM = "HS256"
 
 
 def get_jwt_secret() -> str:
-    return os.environ["JWT_SECRET"]
+    return os.environ.get("JWT_SECRET", "change-me-in-production")
 
 
 def hash_password(password: str) -> str:
